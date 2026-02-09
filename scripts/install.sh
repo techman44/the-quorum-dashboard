@@ -92,6 +92,14 @@ if command -v docker &>/dev/null; then
     success "docker found ($(docker --version 2>&1 | head -1))"
 fi
 
+# curl (needed for Ollama health checks)
+if command -v curl &>/dev/null; then
+    success "curl found"
+else
+    MISSING+=("curl")
+    error "curl not found. Install curl to continue."
+fi
+
 if ! $HAS_PSQL && ! $HAS_DOCKER; then
     MISSING+=("psql or docker")
     error "Neither psql nor docker found. Install PostgreSQL or Docker to continue."
@@ -125,7 +133,7 @@ else
 fi
 
 if [ "$USE_DOCKER" = "y" ]; then
-    info "Starting PostgreSQL via docker-compose..."
+    info "Starting PostgreSQL + Ollama via docker-compose..."
 
     # Make sure .env exists before docker-compose reads it
     if [ ! -f "$PROJECT_DIR/.env" ]; then
@@ -144,9 +152,61 @@ if [ "$USE_DOCKER" = "y" ]; then
     fi
 
     (cd "$PROJECT_DIR" && $COMPOSE_CMD up -d)
-    success "PostgreSQL container is running."
-    info "Waiting 5 seconds for the database to accept connections..."
-    sleep 5
+    success "Docker containers started (PostgreSQL + Ollama)."
+
+    # ── Wait for PostgreSQL ──────────────────────────────────────────
+    info "Waiting for PostgreSQL to accept connections..."
+    PG_MAX_WAIT=30
+    PG_READY=false
+    for i in $(seq 1 "$PG_MAX_WAIT"); do
+        if docker exec quorum-db pg_isready -U "${DB_USER:-quorum}" -q 2>/dev/null; then
+            PG_READY=true
+            break
+        fi
+        printf "."
+        sleep 1
+    done
+    echo ""
+
+    if [ "$PG_READY" = true ]; then
+        success "PostgreSQL is ready (took ~${i}s)."
+    else
+        error "PostgreSQL did not become ready within ${PG_MAX_WAIT}s."
+        error "Check container logs: docker logs quorum-db"
+        exit 1
+    fi
+
+    # ── Wait for Ollama ──────────────────────────────────────────────
+    info "Waiting for Ollama to respond..."
+    OLLAMA_MAX_WAIT=30
+    OLLAMA_READY=false
+    for i in $(seq 1 "$OLLAMA_MAX_WAIT"); do
+        if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+            OLLAMA_READY=true
+            break
+        fi
+        printf "."
+        sleep 1
+    done
+    echo ""
+
+    if [ "$OLLAMA_READY" = true ]; then
+        success "Ollama is ready (took ~${i}s)."
+    else
+        error "Ollama did not become ready within ${OLLAMA_MAX_WAIT}s."
+        error "Check container logs: docker logs quorum-ollama"
+        exit 1
+    fi
+
+    # ── Pull embedding model ─────────────────────────────────────────
+    OLLAMA_EMBED_MODEL="${OLLAMA_EMBED_MODEL:-mxbai-embed-large}"
+    if docker exec quorum-ollama ollama list 2>/dev/null | grep -q "$OLLAMA_EMBED_MODEL"; then
+        success "$OLLAMA_EMBED_MODEL is already available."
+    else
+        info "Pulling $OLLAMA_EMBED_MODEL (this may take a few minutes on first run)..."
+        docker exec quorum-ollama ollama pull "$OLLAMA_EMBED_MODEL"
+        success "$OLLAMA_EMBED_MODEL model pulled."
+    fi
 else
     echo ""
     info "Enter your existing PostgreSQL connection details."
@@ -256,19 +316,85 @@ else
     info "Skipping cron setup. You can run scripts/setup_cron.sh later."
 fi
 
+# ── Final health check ────────────────────────────────────────────────────
+header "Final health check"
+
+HEALTH_OK=true
+
+if [ "$USE_DOCKER" = "y" ]; then
+    # Check PostgreSQL
+    if docker exec quorum-db pg_isready -U "${DB_USER:-quorum}" -q 2>/dev/null; then
+        success "PostgreSQL is responding."
+    else
+        error "PostgreSQL is NOT responding."
+        HEALTH_OK=false
+    fi
+
+    # Check Ollama
+    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+        success "Ollama is responding."
+    else
+        error "Ollama is NOT responding."
+        HEALTH_OK=false
+    fi
+
+    # Check embedding model
+    OLLAMA_EMBED_MODEL="${OLLAMA_EMBED_MODEL:-mxbai-embed-large}"
+    if docker exec quorum-ollama ollama list 2>/dev/null | grep -q "$OLLAMA_EMBED_MODEL"; then
+        success "$OLLAMA_EMBED_MODEL model is available."
+    else
+        error "$OLLAMA_EMBED_MODEL model is NOT available."
+        HEALTH_OK=false
+    fi
+else
+    info "Skipping Docker health checks (using external PostgreSQL)."
+    info "Make sure Ollama is running and the embedding model is pulled."
+fi
+
+# ── 9. Onboarding questionnaire ──────────────────────────────────────────
+header "Onboarding"
+
+echo ""
+if [ "$HEALTH_OK" = true ]; then
+    info "The Quorum includes an onboarding questionnaire that helps the"
+    info "agents understand you from day one. It takes about 5-10 minutes."
+    echo ""
+    if confirm "Would you like to run the initial onboarding questionnaire now?" "y"; then
+        echo ""
+        "$VENV_DIR/bin/python" -m agents.onboarding
+    else
+        info "Skipping onboarding. You can run it later with:"
+        echo "  cd ${PROJECT_DIR} && .venv/bin/python -m agents.onboarding"
+    fi
+else
+    warn "Skipping onboarding (health check had errors)."
+    info "Once services are healthy, run onboarding with:"
+    echo "  cd ${PROJECT_DIR} && .venv/bin/python -m agents.onboarding"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────
 header "Installation complete"
 
-echo ""
-success "The Quorum is ready."
-echo ""
-info "Next steps:"
-echo "  1. Edit ${PROJECT_DIR}/.env with your LLM and embedding provider keys."
-echo "  2. Make sure your embedding model is available"
-echo "     (e.g. ollama pull mxbai-embed-large)."
-echo "  3. Test an agent manually:"
-echo "     cd ${PROJECT_DIR} && .venv/bin/python -m agents.connector"
-echo "  4. Check logs in ${PROJECT_DIR}/logs/"
-echo ""
-info "Documentation: ${PROJECT_DIR}/docs/deployment.md"
-echo ""
+if [ "$HEALTH_OK" = true ]; then
+    echo ""
+    success "The Quorum is ready."
+    echo ""
+    info "Next steps:"
+    echo "  1. Edit ${PROJECT_DIR}/.env with your LLM and embedding provider keys."
+    echo "  2. Test an agent manually:"
+    echo "     cd ${PROJECT_DIR} && .venv/bin/python -m agents.connector"
+    echo "  3. Check logs in ${PROJECT_DIR}/logs/"
+    echo ""
+    info "Documentation: ${PROJECT_DIR}/docs/deployment.md"
+    echo ""
+else
+    echo ""
+    error "Installation completed with errors. Review the health check output above."
+    echo ""
+    echo "Troubleshooting:"
+    echo "  docker logs quorum-db       # PostgreSQL logs"
+    echo "  docker logs quorum-ollama   # Ollama logs"
+    echo "  docker ps                   # Check running containers"
+    echo ""
+    exit 1
+fi

@@ -77,7 +77,7 @@ Every agent reads from and writes to the same shared memory. They run on indepen
 - **Python** -- agent scripts with a shared base class
 - **Any LLM provider** -- Ollama (local), OpenAI, Anthropic, or anything with a chat API
 - **Any embedding model** -- Ollama (mxbai-embed-large), OpenAI, or your own
-- **Docker** -- for the database (optional, you can use any Postgres instance)
+- **Docker** -- handles PostgreSQL and Ollama automatically (no need to install them separately)
 
 ---
 
@@ -92,13 +92,13 @@ cd the-quorum
 cp .env.example .env
 # Edit .env with your database credentials and LLM provider
 
-# Start PostgreSQL + pgvector
+# Start PostgreSQL + Ollama (via Docker)
 docker compose up -d
 
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Run the install script
+# Run the install script (waits for services, pulls embedding model, etc.)
 chmod +x scripts/install.sh
 ./scripts/install.sh
 ```
