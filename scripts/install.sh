@@ -137,8 +137,11 @@ if [ "$USE_DOCKER" = "y" ]; then
 
     # Make sure .env exists before docker-compose reads it
     if [ ! -f "$PROJECT_DIR/.env" ]; then
-        cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
-        warn "Created .env from .env.example -- remember to edit it later."
+        EARLY_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
+        sed "s/GENERATE_ON_INSTALL/$EARLY_PASSWORD/" "$PROJECT_DIR/.env.example" > "$PROJECT_DIR/.env"
+        DB_PASSWORD="$EARLY_PASSWORD"
+        CUSTOM_DB_VARS=true
+        success "Created .env with generated DB password."
     fi
 
     # Prefer 'docker compose' (v2) but fall back to 'docker-compose' (v1)
@@ -227,14 +230,15 @@ else
     read -rp "  DB host [localhost]: " input_host
     read -rp "  DB port [5432]: "      input_port
     read -rp "  DB user [quorum]: "    input_user
-    read -rsp "  DB password [changeme]: " input_pass
+    GENERATED_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
+    read -rsp "  DB password [auto-generated]: " input_pass
     echo ""
     read -rp "  DB name [quorum]: "    input_name
 
     DB_HOST="${input_host:-localhost}"
     DB_PORT="${input_port:-5432}"
     DB_USER="${input_user:-quorum}"
-    DB_PASSWORD="${input_pass:-changeme}"
+    DB_PASSWORD="${input_pass:-$GENERATED_PASSWORD}"
     DB_NAME="${input_name:-quorum}"
 
     # We will write these into .env in the next step if the file does not exist.
@@ -247,8 +251,14 @@ header "Environment configuration"
 if [ -f "$PROJECT_DIR/.env" ]; then
     success ".env already exists -- skipping copy."
 else
-    cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
-    success "Created .env from .env.example."
+    # Generate a password if one wasn't set interactively
+    if [ -z "${DB_PASSWORD:-}" ]; then
+        GENERATED_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
+        DB_PASSWORD="$GENERATED_PASSWORD"
+        CUSTOM_DB_VARS=true
+    fi
+    sed "s/GENERATE_ON_INSTALL/$DB_PASSWORD/" "$PROJECT_DIR/.env.example" > "$PROJECT_DIR/.env"
+    success "Created .env with generated DB password."
 fi
 
 # Patch in custom DB vars if the user entered them manually
