@@ -18,6 +18,7 @@ from typing import Optional
 import psycopg2
 import psycopg2.extras
 import requests
+from dotenv import load_dotenv
 
 logger = logging.getLogger("quorum")
 
@@ -36,6 +37,7 @@ class QuorumAgent:
 
     def _load_config(self) -> dict:
         """Load configuration from environment variables with sensible defaults."""
+        load_dotenv()
         return {
             "db_host": os.getenv("DB_HOST", "localhost"),
             "db_port": int(os.getenv("DB_PORT", "5432")),
@@ -95,7 +97,7 @@ class QuorumAgent:
             resp = requests.post(
                 "https://api.openai.com/v1/embeddings",
                 headers={"Authorization": f"Bearer {self.config['openai_api_key']}"},
-                json={"model": "text-embedding-3-small", "input": text},
+                json={"model": "text-embedding-3-small", "input": text, "dimensions": 1024},
                 timeout=30,
             )
             resp.raise_for_status()
@@ -128,14 +130,14 @@ class QuorumAgent:
             FROM embeddings e
             WHERE 1=1
         """
-        params: list = [str(query_vec)]
+        params: list = ['[' + ','.join(str(x) for x in query_vec) + ']']
 
         if ref_type:
             sql += " AND e.ref_type = %s"
             params.append(ref_type)
 
         sql += " ORDER BY e.embedding <=> %s::vector LIMIT %s"
-        params.extend([str(query_vec), limit])
+        params.extend(['[' + ','.join(str(x) for x in query_vec) + ']', limit])
 
         cur.execute(sql, params)
         results = cur.fetchall()
@@ -208,7 +210,9 @@ class QuorumAgent:
             ON CONFLICT (ref_type, ref_id)
                 DO UPDATE SET embedding = EXCLUDED.embedding
             """,
-            [doc_id, str(vec), self.config["ollama_embed_model"]],
+            [doc_id, '[' + ','.join(str(x) for x in vec) + ']',
+             "text-embedding-3-small" if self.config["embedding_provider"] == "openai"
+             else self.config["ollama_embed_model"]],
         )
 
         conn.commit()

@@ -5,9 +5,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title           TEXT NOT NULL,
     description     TEXT DEFAULT '',
-    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
-                        'pending', 'in_progress', 'done', 'cancelled', 'blocked'
-                    )),
+    status          TEXT NOT NULL DEFAULT 'pending',
     priority        INT NOT NULL DEFAULT 3 CHECK (priority BETWEEN 1 AND 5),
                                                 -- 1 = critical, 5 = low
     owner           TEXT,                       -- who is responsible

@@ -3,10 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS documents (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    doc_type        TEXT NOT NULL CHECK (doc_type IN (
-                        'note', 'summary', 'reflection', 'email',
-                        'file', 'web', 'record'
-                    )),
+    doc_type        TEXT NOT NULL DEFAULT 'note',
     source          TEXT,                       -- which agent or system created this
     title           TEXT,
     content         TEXT NOT NULL,

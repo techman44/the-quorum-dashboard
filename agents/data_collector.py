@@ -207,7 +207,9 @@ class DataCollectorAgent(QuorumAgent):
                 ON CONFLICT (ref_type, ref_id)
                     DO UPDATE SET embedding = EXCLUDED.embedding
                 """,
-                [chunk_id, str(vec), self.config["ollama_embed_model"]],
+                [chunk_id, '[' + ','.join(str(x) for x in vec) + ']',
+                 "text-embedding-3-small" if self.config["embedding_provider"] == "openai"
+                 else self.config["ollama_embed_model"]],
             )
 
         conn.commit()

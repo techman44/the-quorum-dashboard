@@ -3,10 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS events (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_type      TEXT NOT NULL CHECK (event_type IN (
-                        'decision', 'insight', 'critique', 'opportunity',
-                        'connection', 'reflection', 'accountability', 'alert'
-                    )),
+    event_type      TEXT NOT NULL,
     actor           TEXT,                       -- agent or user that created the event
     title           TEXT NOT NULL,
     description     TEXT NOT NULL,

@@ -180,8 +180,9 @@ if [ "$USE_DOCKER" = "y" ]; then
     info "Waiting for Ollama to respond..."
     OLLAMA_MAX_WAIT=30
     OLLAMA_READY=false
+    OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
     for i in $(seq 1 "$OLLAMA_MAX_WAIT"); do
-        if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+        if curl -s "${OLLAMA_URL}/api/tags" >/dev/null 2>&1; then
             OLLAMA_READY=true
             break
         fi
@@ -206,6 +207,16 @@ if [ "$USE_DOCKER" = "y" ]; then
         info "Pulling $OLLAMA_EMBED_MODEL (this may take a few minutes on first run)..."
         docker exec quorum-ollama ollama pull "$OLLAMA_EMBED_MODEL"
         success "$OLLAMA_EMBED_MODEL model pulled."
+    fi
+
+    # ── Pull LLM model ────────────────────────────────────────────
+    LLM_MODEL="${LLM_MODEL:-llama3.2}"
+    if docker exec quorum-ollama ollama list 2>/dev/null | grep -q "$LLM_MODEL"; then
+        success "$LLM_MODEL LLM model is already available."
+    else
+        info "Pulling $LLM_MODEL LLM model (this may take a few minutes on first run)..."
+        docker exec quorum-ollama ollama pull "$LLM_MODEL"
+        success "$LLM_MODEL LLM model pulled."
     fi
 else
     echo ""
@@ -331,7 +342,8 @@ if [ "$USE_DOCKER" = "y" ]; then
     fi
 
     # Check Ollama
-    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+    OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
+    if curl -s "${OLLAMA_URL}/api/tags" >/dev/null 2>&1; then
         success "Ollama is responding."
     else
         error "Ollama is NOT responding."

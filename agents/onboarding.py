@@ -244,7 +244,7 @@ class OnboardingAgent(QuorumAgent):
         return count > 0
 
     def _clear_onboarding(self) -> None:
-        """Remove all onboarding documents so the questionnaire can be re-run."""
+        """Remove all onboarding documents, events, and tasks so the questionnaire can be re-run."""
         conn = self.connect_db()
         cur = conn.cursor()
         # Delete embeddings that reference onboarding documents first.
@@ -259,6 +259,10 @@ class OnboardingAgent(QuorumAgent):
             """
         )
         cur.execute("DELETE FROM documents WHERE doc_type LIKE 'onboarding%%'")
+        # Delete onboarding events.
+        cur.execute("DELETE FROM events WHERE event_type LIKE 'onboarding%%'")
+        # Delete onboarding tasks (identified by metadata source).
+        cur.execute("DELETE FROM tasks WHERE metadata->>'source' = 'onboarding'")
         conn.commit()
         cur.close()
         logger.info("Cleared previous onboarding data.")
