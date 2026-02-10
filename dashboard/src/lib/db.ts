@@ -14,12 +14,16 @@ import type {
 
 // ─── Connection Pool ────────────────────────────────────────────────────────
 
+// Get the database password, defaulting to empty string
+// The pg library requires password to be a string (not undefined/null)
+const dbPassword = process.env.QUORUM_DB_PASSWORD ?? '';
+
 export const pool = new Pool({
   host: process.env.QUORUM_DB_HOST ?? '192.168.20.150',
   port: parseInt(process.env.QUORUM_DB_PORT ?? '5432', 10),
   database: process.env.QUORUM_DB_NAME ?? 'quorum',
   user: process.env.QUORUM_DB_USER ?? 'quorum',
-  password: process.env.QUORUM_DB_PASSWORD ?? '',
+  password: dbPassword,
   max: 10,
 });
 
