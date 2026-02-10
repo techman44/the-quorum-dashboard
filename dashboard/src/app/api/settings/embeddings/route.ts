@@ -51,10 +51,32 @@ async function discoverEmbeddingModels(
             const name = m.name?.toLowerCase() || '';
             return name.includes('embed') || name.includes('minilm') || name.includes('bge');
           })
-          .map((m: any) => ({
-            name: m.name.replace(':latest', ''),
-            dimension: 768, // Default dimension, will be detected on test
-          }));
+          .map((m: any) => {
+            // Detect dimension based on model name
+            const name = m.name.toLowerCase();
+            let dimension = 768; // Default
+
+            if (name.includes('mxbai-embed-large')) {
+              dimension = 1024;
+            } else if (name.includes('mxbai-embed-small')) {
+              dimension = 512;
+            } else if (name.includes('nomic-embed-text')) {
+              dimension = 768;
+            } else if (name.includes('nomic-embed-large') || name.includes('nomic-embed-text-v1.5')) {
+              dimension = 1536;
+            } else if (name.includes('all-minilm')) {
+              dimension = 384;
+            } else if (name.includes('bge-large')) {
+              dimension = 1024;
+            } else if (name.includes('bge-small')) {
+              dimension = 384;
+            }
+
+            return {
+              name: m.name.replace(':latest', ''),
+              dimension,
+            };
+          });
 
         return embeddingModels.length > 0 ? embeddingModels : EMBEDDING_MODELS.ollama;
       }

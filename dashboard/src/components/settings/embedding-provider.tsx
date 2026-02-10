@@ -60,7 +60,10 @@ const FALLBACK_MODELS: Record<string, { name: string; dimension: number }[]> = {
   ollama: [
     { name: 'mxbai-embed-large', dimension: 1024 },
     { name: 'nomic-embed-text', dimension: 768 },
+    { name: 'nomic-embed-text-v1.5', dimension: 768 },
     { name: 'all-minilm', dimension: 384 },
+    { name: 'bge-large', dimension: 1024 },
+    { name: 'bge-small', dimension: 384 },
   ],
   openai: [
     { name: 'text-embedding-3-small', dimension: 1536 },

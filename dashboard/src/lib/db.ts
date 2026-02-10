@@ -712,6 +712,92 @@ async function generateEmbedding(
   }
 }
 
+/**
+ * Get the expected dimension for an embedding model
+ */
+function getEmbeddingDimension(modelName: string): number {
+  const name = modelName.toLowerCase();
+
+  if (name.includes('mxbai-embed-large')) {
+    return 1024;
+  } else if (name.includes('mxbai-embed-small')) {
+    return 512;
+  } else if (name.includes('nomic-embed-text') && !name.includes('v1.5') && !name.includes('large')) {
+    return 768;
+  } else if (name.includes('nomic-embed-large') || name.includes('nomic-embed-text-v1.5')) {
+    return 1536;
+  } else if (name.includes('all-minilm')) {
+    return 384;
+  } else if (name.includes('bge-large')) {
+    return 1024;
+  } else if (name.includes('bge-small')) {
+    return 384;
+  } else if (name.includes('text-embedding-3-large')) {
+    return 3072;
+  } else if (name.includes('text-embedding-3-small') || name.includes('text-embedding-ada-002')) {
+    return 1536;
+  }
+
+  // Default fallback
+  return 1024;
+}
+
+/**
+ * Ensure the embedding column has the correct dimension for the configured model.
+ * This is a no-op if the dimension is already correct.
+ */
+async function ensureEmbeddingDimension(modelName: string): Promise<void> {
+  try {
+    const expectedDim = getEmbeddingDimension(modelName);
+
+    // Check current dimension
+    const result = await pool.query(`
+      SELECT pg_attribute.atttypmod as dimension
+      FROM pg_attribute
+      JOIN pg_class ON pg_class.oid = pg_attribute.attrelid
+      JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+      WHERE pg_namespace.nspname = 'public'
+        AND pg_class.relname = 'quorum_embeddings'
+        AND pg_attribute.attname = 'embedding'
+    `);
+
+    if (result.rows.length === 0) {
+      console.warn('Embedding column not found, skipping dimension check');
+      return;
+    }
+
+    const currentDim = result.rows[0].dimension;
+
+    // PostgreSQL stores vector(n) with typmod = n * 10000 + 1
+    // So vector(1536) would have typmod = 15360001
+    const currentVectorDim = Math.floor((currentDim - 1) / 10000);
+
+    if (currentVectorDim === expectedDim) {
+      return; // Already correct
+    }
+
+    console.log(`Updating embedding dimension from ${currentVectorDim} to ${expectedDim} for model ${modelName}`);
+
+    // Check if there are existing embeddings
+    const countResult = await pool.query('SELECT COUNT(*) as count FROM quorum_embeddings');
+    const existingCount = parseInt(countResult.rows[0].count, 10);
+
+    if (existingCount > 0) {
+      console.warn(`Cannot change embedding dimension: ${existingCount} existing embeddings would be invalidated. Please clear embeddings first.`);
+      throw new Error(`Cannot change embedding dimension with existing embeddings. Clear embeddings table first.`);
+    }
+
+    // Alter the column
+    await pool.query(`ALTER TABLE quorum_embeddings DROP COLUMN embedding`);
+    await pool.query(`ALTER TABLE quorum_embeddings ADD COLUMN embedding vector(${expectedDim})`);
+
+    console.log(`Embedding dimension updated to ${expectedDim}`);
+  } catch (error) {
+    console.error('Error ensuring embedding dimension:', error);
+    throw error;
+  }
+}
+
 export async function generateAndStoreEmbedding(
   docId: string,
   content: string
@@ -719,6 +805,11 @@ export async function generateAndStoreEmbedding(
   try {
     // Get the embedding configuration
     const embeddingConfig = await getEmbeddingConfig();
+
+    // Ensure the embedding column has the correct dimension for the model
+    if (embeddingConfig?.model) {
+      await ensureEmbeddingDimension(embeddingConfig.model);
+    }
 
     // Clear any existing embeddings for this document
     await pool.query(
