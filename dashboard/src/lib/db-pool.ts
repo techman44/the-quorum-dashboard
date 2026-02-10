@@ -14,7 +14,7 @@ export function getPool(): Pool {
     port: 5432,
     database: 'quorum',
     user: 'quorum',
-    password: '', // Empty string for local Docker trust authentication
+    password: 'quorum123', // Password for quorum user
     max: 10,
   });
 

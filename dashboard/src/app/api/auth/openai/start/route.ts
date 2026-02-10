@@ -5,16 +5,16 @@ import { storeOAuthState } from '@/lib/oauth/state-store';
 /**
  * POST /api/auth/openai/start
  *
- * Initiates the OpenAI OAuth flow.
- * Returns the authorization URL for the client to redirect the user to.
+ * Initiates the OpenAI OAuth PKCE flow.
+ * Returns the authorization URL for the user to click.
  *
  * Request body:
- * - redirectUri: Optional custom redirect URI (defaults to current origin + /api/auth/openai/callback)
  * - providerId: Optional existing provider ID to link OAuth to
  *
  * Response:
- * - url: The authorization URL to redirect to
+ * - url: The authorization URL to open
  * - state: The state parameter for CSRF protection
+ * - instructions: Human-readable instructions for the user
  */
 /**
  * GET /api/auth/openai/start
@@ -28,12 +28,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { providerId } = body as { providerId?: string };
+    const { providerId, redirectUri: customRedirectUri } = body as { providerId?: string; redirectUri?: string };
+
+    // Check if OAuth is configured
+    const clientId = process.env.OPENAI_OAUTH_CLIENT_ID;
+    if (!clientId) {
+      return NextResponse.json(
+        {
+          error: 'OAuth not configured',
+          details: 'OpenAI OAuth requires OPENAI_OAUTH_CLIENT_ID and optionally OPENAI_OAUTH_CLIENT_SECRET environment variables. Create an OAuth app at https://platform.openai.com/docs/quickstart',
+        },
+        { status: 501 }
+      );
+    }
 
     // Build the redirect URI
-    // NOTE: OpenAI's public OAuth client (app_EMoamEEZ73f0CkXaXp7hrann) only accepts
-    // callbacks to http://127.0.0.1:1455, so we use that and handle the callback manually
-    const redirectUri = 'http://127.0.0.1:1455/auth/callback';
+    // Use custom redirect if provided, otherwise use localhost callback
+    const redirectUri = customRedirectUri || 'http://127.0.0.1:1455/auth/callback';
 
     // Create the authorization flow
     const { url: authUrl, state, codeVerifier } = await createAuthorizationFlow(
@@ -41,11 +52,19 @@ export async function POST(request: NextRequest) {
     );
 
     // Store the state and code verifier for the callback
+    // Store with a longer TTL since the user might take time to complete auth
     storeOAuthState(state, codeVerifier, redirectUri, providerId);
 
     return NextResponse.json({
       url: authUrl,
       state,
+      instructions: {
+        step1: 'Click the link below to open OpenAI authorization',
+        step2: 'Sign in to your ChatGPT account',
+        step3: 'Click "Authorize" to grant access to Quorum Dashboard',
+        step4: 'After authorization, copy the redirect URL from your browser address bar',
+        step5: 'Paste the redirect URL into the input field below',
+      },
     });
   } catch (error) {
     console.error('OAuth start error:', error);

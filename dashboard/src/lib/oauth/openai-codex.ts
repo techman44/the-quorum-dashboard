@@ -11,8 +11,11 @@
  */
 
 // OpenAI OAuth configuration
+// To use OAuth, you need to create your own OAuth app at: https://platform.openai.com/docs/quickstart
 const OPENAI_OAUTH_CONFIG = {
-  clientId: process.env.OPENAI_OAUTH_CLIENT_ID || 'app_EMoamEEZ73f0CkXaXp7hrann',
+  // Use environment variable for custom OAuth app, or the Codex CLI client as fallback
+  clientId: process.env.OPENAI_OAUTH_CLIENT_ID || '',
+  clientSecret: process.env.OPENAI_OAUTH_CLIENT_SECRET || '',
   authorizationUrl: 'https://auth.openai.com/oauth/authorize',
   tokenUrl: 'https://auth.openai.com/oauth/token',
   scope: 'openid profile email offline_access',
@@ -65,6 +68,7 @@ export async function createAuthorizationFlow(
   const authState = state || generateState();
 
   // Build authorization URL
+  // Use the same parameters as OpenClaw for compatibility
   const params = new URLSearchParams({
     client_id: OPENAI_OAUTH_CONFIG.clientId,
     redirect_uri: redirectUri,
@@ -73,6 +77,9 @@ export async function createAuthorizationFlow(
     code_challenge: challenge,
     code_challenge_method: 'S256',
     state: authState,
+    id_token_add_organizations: 'true',
+    codex_cli_simplified_flow: 'true',
+    originator: 'quorum-dashboard',
   });
 
   const url = `${OPENAI_OAUTH_CONFIG.authorizationUrl}?${params.toString()}`;
@@ -97,18 +104,27 @@ export async function exchangeAuthorizationCode(
   codeVerifier: string,
   redirectUri: string
 ): Promise<TokenExchangeResult> {
+  const bodyParams: Record<string, string> = {
+    client_id: OPENAI_OAUTH_CONFIG.clientId,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: redirectUri,
+  };
+
+  // Include client_secret if available (for confidential OAuth apps)
+  if (OPENAI_OAUTH_CONFIG.clientSecret) {
+    bodyParams.client_secret = OPENAI_OAUTH_CONFIG.clientSecret;
+  } else {
+    // Public client (PKCE) - include code verifier
+    bodyParams.code_verifier = codeVerifier;
+  }
+
   const response = await fetch(OPENAI_OAUTH_CONFIG.tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({
-      client_id: OPENAI_OAUTH_CONFIG.clientId,
-      grant_type: 'authorization_code',
-      code,
-      code_verifier: codeVerifier,
-      redirect_uri: redirectUri,
-    }),
+    body: new URLSearchParams(bodyParams),
   });
 
   if (!response.ok) {

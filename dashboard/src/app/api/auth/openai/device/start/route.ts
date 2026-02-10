@@ -5,8 +5,10 @@ import { pool } from '@/lib/db-pool';
 /**
  * POST /api/auth/openai/device/start
  *
- * Initiates the OpenAI device code OAuth flow.
- * This is the RECOMMENDED method for remote/headless environments.
+ * NOTE: OpenAI does not support the device code flow for third-party OAuth apps.
+ * This endpoint is kept for future compatibility but will likely fail.
+ *
+ * Please use the PKCE flow instead: POST /api/auth/openai/start
  *
  * Request body:
  * - providerId: Optional existing provider ID to link OAuth to
@@ -55,6 +57,7 @@ export async function POST(request: NextRequest) {
       {
         error: 'Failed to initiate device code flow',
         details: error instanceof Error ? error.message : 'Unknown error',
+        message: 'OpenAI does not support device code flow for third-party OAuth apps. Please use the browser-based OAuth flow instead by calling POST /api/auth/openai/start',
       },
       { status: 500 }
     );

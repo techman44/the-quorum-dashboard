@@ -103,6 +103,11 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
   const [deviceAuthStatus, setDeviceAuthStatus] = useState<'pending' | 'complete' | 'error'>('pending');
   const [isPollingAuth, setIsPollingAuth] = useState(false);
 
+  // PKCE OAuth flow state
+  const [pkceAuthUrl, setPkceAuthUrl] = useState<string | null>(null);
+  const [redirectUrlInput, setRedirectUrlInput] = useState('');
+  const [isSubmittingCallback, setIsSubmittingCallback] = useState(false);
+
   // Handle OAuth callback status from URL
   useEffect(() => {
     const oauthStatus = searchParams.get('oauth_status');
@@ -316,13 +321,15 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
   }
 
   async function handleOAuthLogin(providerId?: string) {
-    // Start the device code OAuth flow
+    // Start the PKCE OAuth flow (simpler than device code)
     setOAuthStatus({ status: null, message: '' });
-    setDeviceAuthStatus('pending');
+    setPkceAuthUrl(null);
+    setRedirectUrlInput('');
     setShowDeviceAuth(true);
+    setDeviceAuthStatus('pending');
 
     try {
-      const response = await fetch('/api/auth/openai/device/start', {
+      const response = await fetch('/api/auth/openai/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providerId }),
@@ -334,16 +341,71 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
       }
 
       const data = await response.json();
-      setDeviceAuthCode(data);
-
-      // Start polling for completion
-      startPolling(data.deviceCodeId);
+      setPkceAuthUrl(data.url);
     } catch (error) {
       setOAuthStatus({
         status: 'error',
         message: error instanceof Error ? error.message : 'Failed to start OAuth flow',
       });
       setShowDeviceAuth(false);
+    }
+  }
+
+  async function handleSubmitRedirectUrl() {
+    if (!redirectUrlInput.trim()) {
+      setOAuthStatus({
+        status: 'error',
+        message: 'Please paste the redirect URL from your browser',
+      });
+      return;
+    }
+
+    setIsSubmittingCallback(true);
+
+    try {
+      const response = await fetch('/api/auth/openai/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirectUrl: redirectUrlInput.trim() }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Authentication failed');
+      }
+
+      const result = await response.json();
+
+      // Success! Refresh provider list
+      if (result.provider) {
+        setProviders(prev => {
+          const existing = prev.find(p => p.id === result.provider.id);
+          if (existing) {
+            return prev.map(p => p.id === result.provider.id ? { ...p, ...result.provider } : p);
+          }
+          return [{ ...result.provider, createdAt: new Date(), updatedAt: new Date() }, ...prev];
+        });
+      }
+
+      setDeviceAuthStatus('complete');
+      setOAuthStatus({
+        status: 'success',
+        message: result.message || 'Successfully connected your ChatGPT account!',
+      });
+
+      // Close dialog after 2 seconds
+      setTimeout(() => {
+        setShowDeviceAuth(false);
+        setPkceAuthUrl(null);
+        setRedirectUrlInput('');
+      }, 2000);
+    } catch (error) {
+      setOAuthStatus({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Authentication failed',
+      });
+    } finally {
+      setIsSubmittingCallback(false);
     }
   }
 
@@ -703,13 +765,14 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
         )}
       </CardContent>
 
-      {/* Device Code OAuth Dialog */}
+      {/* PKCE OAuth Dialog */}
       <Dialog open={showDeviceAuth} onOpenChange={(open) => {
         if (!open) {
           setShowDeviceAuth(false);
-          setDeviceAuthCode(null);
+          setPkceAuthUrl(null);
+          setRedirectUrlInput('');
           setDeviceAuthStatus('pending');
-          setIsPollingAuth(false);
+          setIsSubmittingCallback(false);
         }
       }}>
         <DialogContent className="sm:max-w-lg">
@@ -721,105 +784,91 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {deviceAuthCode ? (
-              // Step 2: Show the code and verification URL
-              <>
-                {deviceAuthStatus === 'pending' && (
-                  <div className="space-y-4">
-                    <div className="rounded-lg bg-primary/5 border border-primary/20 p-6 text-center">
-                      <p className="text-sm text-muted-foreground mb-3">Your one-time code:</p>
-                      <div className="text-3xl font-mono font-bold tracking-wider mb-2">
-                        {deviceAuthCode.userCode}
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(deviceAuthCode.userCode);
-                        }}
-                        className="mt-2"
-                      >
-                        Copy Code
-                      </Button>
-                    </div>
+            {deviceAuthStatus === 'complete' ? (
+              // Success state
+              <div className="rounded-lg bg-green-950 border border-green-800 p-6 text-center">
+                <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-400" />
+                <h3 className="text-lg font-semibold text-green-200 mb-2">Successfully connected!</h3>
+                <p className="text-sm text-green-200/80">Your ChatGPT account is now linked to the dashboard.</p>
+              </div>
+            ) : pkceAuthUrl ? (
+              // Show auth URL and instructions
+              <div className="space-y-4">
+                <div className="rounded-lg bg-primary/5 border border-primary/20 p-4 text-center">
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Click the button below to open OpenAI authorization
+                  </p>
+                  <Button
+                    onClick={() => window.open(pkceAuthUrl, '_blank')}
+                    className="w-full"
+                    size="lg"
+                  >
+                    <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.0993 3.8558L12.6 8.3829l2.02-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.4092-.6813zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.77759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>
+                    </svg>
+                    Open OpenAI Authorization
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    This will open auth.openai.com in a new tab
+                  </p>
+                </div>
 
-                    <div className="rounded-lg bg-muted p-4 text-sm space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">1</div>
-                        <p className="font-medium">Click the button below to open OpenAI</p>
-                      </div>
-                      <div className="ml-8">
-                        <Button
-                          onClick={() => window.open(deviceAuthCode.verificationUriComplete, '_blank')}
-                          className="w-full"
-                        >
-                          Open {new URL(deviceAuthCode.verificationUri).hostname}
-                        </Button>
-                      </div>
+                <div className="rounded-lg bg-muted p-4 text-sm space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">1</div>
+                    <p className="font-medium">Click the button above to open OpenAI</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">2</div>
+                    <p className="font-medium">Sign in to your ChatGPT account</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">3</div>
+                    <p className="font-medium">Click "Authorize" to grant access</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">4</div>
+                    <p className="font-medium">Copy the URL from the browser address bar after authorization</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">5</div>
+                    <p className="font-medium">Paste the URL below and click "Submit"</p>
+                  </div>
+                </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">2</div>
-                        <p className="font-medium">Sign in and enter the code above</p>
-                      </div>
+                <div className="space-y-2">
+                  <Label htmlFor="redirect-url">Redirect URL from browser</Label>
+                  <Input
+                    id="redirect-url"
+                    placeholder="http://127.0.0.1:1455/auth/callback?code=..."
+                    value={redirectUrlInput}
+                    onChange={(e) => setRedirectUrlInput(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    After authorizing, copy the entire URL from your browser address bar
+                  </p>
+                </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">3</div>
-                        <p className="font-medium">Authorize the Quorum Dashboard</p>
-                      </div>
+                <Button
+                  onClick={handleSubmitRedirectUrl}
+                  disabled={!redirectUrlInput.trim() || isSubmittingCallback}
+                  className="w-full"
+                >
+                  {isSubmittingCallback ? 'Connecting...' : 'Submit and Connect'}
+                </Button>
 
-                      <div className="ml-8 mt-4 flex items-center gap-2 text-muted-foreground">
-                        {isPollingAuth && (
-                          <>
-                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            <span className="text-sm">Waiting for you to complete sign in...</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-center text-muted-foreground">
-                      This code expires in 15 minutes. Keep this dialog open while you authorize.
-                    </p>
+                {oauthStatus.status === 'error' && (
+                  <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3">
+                    <p className="text-sm text-destructive">{oauthStatus.message}</p>
                   </div>
                 )}
-
-                {deviceAuthStatus === 'complete' && (
-                  <div className="rounded-lg bg-green-950 border border-green-800 p-6 text-center">
-                    <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-400" />
-                    <h3 className="text-lg font-semibold text-green-200 mb-2">Successfully connected!</h3>
-                    <p className="text-sm text-green-200/80">Your ChatGPT account is now linked to the dashboard.</p>
-                  </div>
-                )}
-
-                {deviceAuthStatus === 'error' && (
-                  <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-6 text-center">
-                    <p className="text-destructive font-medium mb-2">Authentication failed</p>
-                    <p className="text-sm text-muted-foreground">{oauthStatus.message}</p>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setShowDeviceAuth(false);
-                        setDeviceAuthCode(null);
-                        setDeviceAuthStatus('pending');
-                      }}
-                      className="mt-4"
-                    >
-                      Try Again
-                    </Button>
-                  </div>
-                )}
-              </>
+              </div>
             ) : (
-              // Step 1: Loading state
+              // Loading state
               <div className="text-center py-8">
                 <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-                <p className="text-sm text-muted-foreground">Initializing...</p>
-              </div>
-            )}
-
-            {oauthStatus.status === 'error' && deviceAuthStatus === 'pending' && (
-              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3">
-                <p className="text-sm text-destructive">{oauthStatus.message}</p>
+                <p className="text-sm text-muted-foreground">Initializing authentication...</p>
               </div>
             )}
           </div>
@@ -829,9 +878,10 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
               variant="outline"
               onClick={() => {
                 setShowDeviceAuth(false);
-                setDeviceAuthCode(null);
+                setPkceAuthUrl(null);
+                setRedirectUrlInput('');
                 setDeviceAuthStatus('pending');
-                setIsPollingAuth(false);
+                setIsSubmittingCallback(false);
               }}
             >
               Cancel

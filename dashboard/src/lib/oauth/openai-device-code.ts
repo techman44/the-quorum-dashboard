@@ -46,6 +46,9 @@ export interface DeviceAuthPollResult {
 /**
  * Step 1: Request a device code from OpenAI
  *
+ * Note: This endpoint is protected by Cloudflare and may block requests from
+ * server environments. Consider using the PKCE flow instead for better reliability.
+ *
  * @returns Device code response with user code and verification URL
  */
 export async function requestDeviceCode(): Promise<DeviceCodeResponse> {
@@ -53,6 +56,15 @@ export async function requestDeviceCode(): Promise<DeviceCodeResponse> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Origin': 'https://chat.openai.com',
+      'Referer': 'https://chat.openai.com/',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-site',
     },
     body: new URLSearchParams({
       client_id: OPENAI_OAUTH_CONFIG.clientId,
@@ -62,6 +74,16 @@ export async function requestDeviceCode(): Promise<DeviceCodeResponse> {
 
   if (!response.ok) {
     const errorText = await response.text();
+
+    // Check for Cloudflare challenge page
+    if (errorText.includes('Just a moment') || errorText.includes('cf_chl_opt')) {
+      throw new Error(
+        'Device code flow is blocked by Cloudflare protection. ' +
+        'Please use the browser-based OAuth flow instead by clicking "Connect with OpenAI" ' +
+        'which will open a browser window for authentication.'
+      );
+    }
+
     throw new Error(`Device code request failed: ${response.status} ${errorText}`);
   }
 
@@ -103,6 +125,15 @@ export async function pollForToken(
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Origin': 'https://chat.openai.com',
+        'Referer': 'https://chat.openai.com/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-site',
       },
       body: new URLSearchParams({
         client_id: OPENAI_OAUTH_CONFIG.clientId,
@@ -169,6 +200,15 @@ export async function verifyDeviceCode(deviceCode: string): Promise<DeviceAuthPo
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Origin': 'https://chat.openai.com',
+      'Referer': 'https://chat.openai.com/',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-site',
     },
     body: new URLSearchParams({
       client_id: OPENAI_OAUTH_CONFIG.clientId,
@@ -225,6 +265,15 @@ export async function refreshDeviceAccessToken(
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Origin': 'https://chat.openai.com',
+      'Referer': 'https://chat.openai.com/',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-site',
     },
     body: new URLSearchParams({
       client_id: OPENAI_OAUTH_CONFIG.clientId,
