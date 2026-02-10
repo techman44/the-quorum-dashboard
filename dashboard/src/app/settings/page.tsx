@@ -119,7 +119,7 @@ export default async function SettingsPage() {
   const agentMap = new Map(agents.map((a) => [a.name, toLegacyAgent(a)]));
 
   const ollamaHost = process.env.OLLAMA_HOST ?? 'http://localhost:11434';
-  const dbHost = process.env.QUORUM_DB_HOST ?? '192.168.20.150';
+  const dbHost = process.env.QUORUM_DB_HOST ?? 'quorum-postgres';
   const dbPort = process.env.QUORUM_DB_PORT ?? '5432';
   const dbName = process.env.QUORUM_DB_NAME ?? 'quorum';
   const dbUser = process.env.QUORUM_DB_USER ?? 'quorum';
