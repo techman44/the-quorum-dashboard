@@ -93,6 +93,9 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
     status: null,
     message: '',
   });
+  const [showManualOAuth, setShowManualOAuth] = useState(false);
+  const [manualAuthUrl, setManualAuthUrl] = useState('');
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
 
   // Handle OAuth callback status from URL
   useEffect(() => {
@@ -303,22 +306,10 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
   }
 
   async function handleOAuthLogin(providerId?: string) {
-    try {
-      const response = await fetch('/api/auth/openai/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providerId }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to start OAuth flow');
-      }
-
-      const { url } = await response.json();
-
-      // Redirect to OpenAI authorization page
-      window.location.href = url;
+    // For the public OpenAI OAuth client, we need to use the manual flow
+    // since it only accepts callbacks to 127.0.0.1:1455
+    setShowManualOAuth(true);
+  }
     } catch (error) {
       setOAuthStatus({
         status: 'error',
@@ -604,6 +595,94 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
           </Table>
         )}
       </CardContent>
+
+      {/* Manual OAuth Dialog - for when automatic callback doesn't work */}
+      <Dialog open={showManualOAuth} onOpenChange={setShowManualOAuth}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Complete OpenAI OAuth</DialogTitle>
+            <DialogDescription>
+              After authorizing in the popup, copy the redirect URL from your browser's address bar
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg bg-muted p-4 text-sm">
+              <p className="font-medium mb-2">Instructions:</p>
+              <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                <li>Click the button below to open OpenAI authorization</li>
+                <li>Sign in with your ChatGPT account</li>
+                <li>After authorizing, you'll be redirected to a page that doesn't load</li>
+                <li>Copy the URL from your browser's address bar</li>
+                <li>Paste it below and click Submit</li>
+              </ol>
+            </div>
+
+            <Button onClick={() => {
+              const response = fetch('/api/auth/openai/start').then(r => r.json());
+              response.then(({ url }) => window.open(url, '_blank'));
+            }} className="w-full">
+              Open OpenAI Authorization Page
+            </Button>
+
+            <div className="space-y-2">
+              <Label htmlFor="auth-url">Redirect URL (from browser after login)</Label>
+              <Input
+                id="auth-url"
+                placeholder="http://127.0.0.1:1455/auth/callback?code=..."
+                value={manualAuthUrl}
+                onChange={(e) => setManualAuthUrl(e.target.value)}
+                disabled={isSubmittingManual}
+              />
+            </div>
+
+            {oauthStatus.status === 'error' && (
+              <p className="text-sm text-destructive">{oauthStatus.message}</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowManualOAuth(false)}>
+              Cancel
+            </Button>
+            <Button onClick={async () => {
+              if (!manualAuthUrl.trim()) return;
+              setIsSubmittingManual(true);
+
+              try {
+                const response = await fetch('/api/auth/openai/callback', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ redirectUrl: manualAuthUrl }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                  setShowManualOAuth(false);
+                  setManualAuthUrl('');
+                  // Refresh providers
+                  window.location.reload();
+                } else {
+                  setOAuthStatus({
+                    status: 'error',
+                    message: result.error || 'Failed to complete OAuth',
+                  });
+                }
+              } catch (error) {
+                setOAuthStatus({
+                  status: 'error',
+                  message: error instanceof Error ? error.message : 'Failed to complete OAuth',
+                });
+              } finally {
+                setIsSubmittingManual(false);
+              }
+            }} disabled={isSubmittingManual || !manualAuthUrl.trim()}>
+              {isSubmittingManual ? 'Submitting...' : 'Submit'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -5,6 +5,139 @@ import { createAIProvider, updateAIProvider, listAIProviders } from '@/lib/db';
 import { encryptApiKey } from '@/lib/ai/encryption';
 
 /**
+ * POST /api/auth/openai/callback
+ *
+ * Handles manual OAuth callback when user pastes the redirect URL or code.
+ * This is a fallback for when the automatic callback doesn't work (e.g., remote servers).
+ *
+ * Request body:
+ * - redirectUrl: The full redirect URL from OpenAI (contains code and state)
+ * - code: The authorization code (if providing directly)
+ * - state: The state parameter (if providing code directly)
+ *
+ * Response:
+ * - success: true if successful
+ * - message: Status message
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { redirectUrl, code, state } = body as { redirectUrl?: string; code?: string; state?: string };
+
+    let authCode: string;
+    let authState: string;
+
+    if (redirectUrl) {
+      // Parse the redirect URL to extract code and state
+      const url = new URL(redirectUrl);
+      authCode = url.searchParams.get('code') || '';
+      authState = url.searchParams.get('state') || '';
+    } else if (code && state) {
+      authCode = code;
+      authState = state;
+    } else {
+      return NextResponse.json(
+        { error: 'Missing required parameters: provide redirectUrl or (code and state)' },
+        { status: 400 }
+      );
+    }
+
+    if (!authCode || !authState) {
+      return NextResponse.json(
+        { error: 'Invalid redirect URL or parameters' },
+        { status: 400 }
+      );
+    }
+
+    // Consume and validate the state
+    const stateData = consumeOAuthState(authState);
+
+    if (!stateData) {
+      return NextResponse.json(
+        { error: 'Invalid or expired state parameter. Please try again.' },
+        { status: 400 }
+      );
+    }
+
+    // Exchange the authorization code for tokens
+    const tokenResult = await exchangeAuthorizationCode(
+      authCode,
+      stateData.codeVerifier,
+      stateData.redirectUri
+    );
+
+    // Extract metadata from ID token if available
+    let metadata: Record<string, unknown> = {};
+    let accountId: string | undefined;
+
+    if (tokenResult.idToken) {
+      const extracted = extractMetadataFromIdToken(tokenResult.idToken);
+      accountId = extracted.accountId;
+      metadata = {
+        ...extracted,
+        oauthProvider: 'openai',
+        connectedAt: new Date().toISOString(),
+      };
+    } else {
+      metadata = {
+        oauthProvider: 'openai',
+        connectedAt: new Date().toISOString(),
+      };
+    }
+
+    // Calculate token expiration
+    const expiresAt = calculateExpirationDate(tokenResult.expiresIn);
+
+    // Store OAuth tokens
+    const providerName = accountId
+      ? `OpenAI (${accountId})`
+      : `OpenAI OAuth (${new Date().toLocaleDateString()})`;
+
+    const result = await pool.query(
+      `INSERT INTO quorum_ai_providers
+       (provider_type, name, is_enabled, oauth_token, oauth_refresh_token, oauth_expires_at, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (provider_type) DO UPDATE SET
+         oauth_token = EXCLUDED.oauth_token,
+         oauth_refresh_token = EXCLUDED.oauth_refresh_token,
+         oauth_expires_at = EXCLUDED.oauth_expires_at,
+         metadata = EXCLUDED.metadata,
+         updated_at = NOW()
+       RETURNING id, name`,
+      [
+        'openai',
+        providerName,
+        true,
+        tokenResult.accessToken,
+        tokenResult.refreshToken,
+        expiresAt,
+        JSON.stringify(metadata),
+      ]
+    );
+
+    const newProvider = result.rows[0];
+
+    return NextResponse.json({
+      success: true,
+      message: `Connected OpenAI account: ${newProvider.name}`,
+      provider: {
+        id: newProvider.id,
+        name: newProvider.name,
+      }
+    });
+  } catch (error) {
+    console.error('OAuth callback error:', error);
+    return NextResponse.json(
+      {
+        error: 'Authentication failed',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * GET /api/auth/openai/callback
  *
  * Handles the OAuth callback from OpenAI.

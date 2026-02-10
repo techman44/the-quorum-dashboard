@@ -21,10 +21,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { providerId } = body as { providerId?: string };
 
-    // Build the redirect URI based on the request origin
-    const url = new URL(request.url);
-    const origin = url.origin;
-    const redirectUri = `${origin}/api/auth/openai/callback`;
+    // Build the redirect URI
+    // NOTE: OpenAI's public OAuth client (app_EMoamEEZ73f0CkXaXp7hrann) only accepts
+    // callbacks to http://127.0.0.1:1455, so we use that and handle the callback manually
+    const redirectUri = 'http://127.0.0.1:1455/auth/callback';
 
     // Create the authorization flow
     const { url: authUrl, state, codeVerifier } = await createAuthorizationFlow(

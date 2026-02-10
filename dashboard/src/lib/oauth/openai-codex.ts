@@ -12,7 +12,7 @@
 
 // OpenAI OAuth configuration
 const OPENAI_OAUTH_CONFIG = {
-  clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
+  clientId: process.env.OPENAI_OAUTH_CLIENT_ID || 'app_EMoamEEZ73f0CkXaXp7hrann',
   authorizationUrl: 'https://auth.openai.com/oauth/authorize',
   tokenUrl: 'https://auth.openai.com/oauth/token',
   scope: 'openid profile email offline_access',
