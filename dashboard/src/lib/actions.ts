@@ -69,7 +69,20 @@ export async function updateAgentConfigAction(
 }
 
 export async function toggleAgentEnabled(agentName: string, enabled: boolean) {
+  // Update database config
   await dbUpdateAgentConfig(agentName, { enabled });
+
+  // Also update agent discovery system via API
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/agents/${encodeURIComponent(agentName)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+  } catch (err) {
+    console.error('Failed to update agent discovery enabled state:', err);
+  }
+
   revalidatePath('/');
   revalidatePath('/agents');
   revalidatePath('/settings');

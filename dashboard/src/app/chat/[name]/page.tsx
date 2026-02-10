@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
-import { getAgent } from '@/lib/agents';
+import { getAgentMetadata } from '@/lib/agent-discovery';
+import { toLegacyAgent } from '@/lib/use-agents';
 import { getChatHistory } from '@/lib/db';
 import { ChatPanel } from '@/components/chat-panel';
 
@@ -11,11 +12,14 @@ export default async function ChatPage({
   params: Promise<{ name: string }>;
 }) {
   const { name } = await params;
-  const agent = getAgent(name);
+  const agentMetadata = await getAgentMetadata(name);
 
-  if (!agent) {
+  if (!agentMetadata) {
     notFound();
   }
+
+  // Convert to legacy format for compatibility with ChatPanel
+  const agent = toLegacyAgent(agentMetadata);
 
   const history = await getChatHistory(name, 100);
 

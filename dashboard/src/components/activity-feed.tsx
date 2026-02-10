@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { timeAgo } from "@/lib/utils";
-import { getAgent } from "@/lib/agents";
+import { fetchAgent, type UIAgent } from "@/lib/use-agents";
 import type { QuorumEvent } from "@/lib/types";
 
 const typeStyles: Record<string, string> = {
@@ -14,6 +15,35 @@ const typeStyles: Record<string, string> = {
 };
 
 export function ActivityFeed({ events }: { events: QuorumEvent[] }) {
+  const [agentsMap, setAgentsMap] = useState<Map<string, UIAgent>>(new Map());
+
+  useEffect(() => {
+    // Collect unique agent names from events
+    const agentNames = new Set<string>();
+    events.forEach((event) => {
+      const source = event.metadata?.source as string | undefined;
+      if (source) {
+        agentNames.add(source);
+      }
+    });
+
+    // Fetch all agents in parallel
+    const fetchAgents = async () => {
+      const agentMap = new Map<string, UIAgent>();
+      await Promise.all(
+        Array.from(agentNames).map(async (name) => {
+          const agent = await fetchAgent(name);
+          if (agent) {
+            agentMap.set(name, agent);
+          }
+        })
+      );
+      setAgentsMap(agentMap);
+    };
+
+    fetchAgents();
+  }, [events]);
+
   return (
     <ScrollArea className="h-[420px]">
       <div className="flex flex-col gap-1 pr-4">
@@ -24,7 +54,7 @@ export function ActivityFeed({ events }: { events: QuorumEvent[] }) {
         )}
         {events.map((event) => {
           const source = (event.metadata?.source as string) ?? null;
-          const agent = source ? getAgent(source) : null;
+          const agent = source ? agentsMap.get(source) : null;
 
           return (
             <div

@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       name: p.name,
       isEnabled: p.is_enabled !== undefined ? p.is_enabled : p.isEnabled,
       baseUrl: p.base_url || p.baseUrl,
-      hasApiKey: !!p.api_key_encrypted,
+      hasApiKey: !!p.api_key_encrypted || !!p.oauth_token,
       hasOAuth: !!p.oauth_token,
       metadata: p.metadata || {},
       createdAt: p.created_at || p.createdAt,
@@ -154,7 +154,8 @@ export async function POST(request: NextRequest) {
       name: provider.name,
       isEnabled: (provider as any).is_enabled !== undefined ? (provider as any).is_enabled : provider.isEnabled,
       baseUrl: (provider as any).base_url || provider.baseUrl,
-      hasApiKey: !!((provider as any).api_key_encrypted || provider.apiKeyEncrypted),
+      hasApiKey: !!((provider as any).api_key_encrypted || provider.apiKeyEncrypted) || !!((provider as any).oauth_token || provider.oauthToken),
+      hasOAuth: !!((provider as any).oauth_token || provider.oauthToken),
       metadata: provider.metadata || {},
     });
   } catch (err) {
@@ -218,7 +219,8 @@ export async function PUT(request: NextRequest) {
       name: provider.name,
       isEnabled: (provider as any).is_enabled !== undefined ? (provider as any).is_enabled : provider.isEnabled,
       baseUrl: (provider as any).base_url || provider.baseUrl,
-      hasApiKey: !!((provider as any).api_key_encrypted || provider.apiKeyEncrypted),
+      hasApiKey: !!((provider as any).api_key_encrypted || provider.apiKeyEncrypted) || !!((provider as any).oauth_token || provider.oauthToken),
+      hasOAuth: !!((provider as any).oauth_token || provider.oauthToken),
       metadata: provider.metadata || {},
     });
   } catch (err) {

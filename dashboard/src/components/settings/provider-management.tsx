@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -37,6 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { CheckCircle2 } from 'lucide-react';
 
 interface Provider {
   id: string;
@@ -45,6 +47,7 @@ interface Provider {
   isEnabled: boolean;
   baseUrl?: string;
   hasApiKey: boolean;
+  hasOAuth?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,11 +57,11 @@ interface ProviderManagementProps {
 }
 
 const PROVIDER_TYPES = [
-  { value: 'openai', label: 'OpenAI', color: 'bg-emerald-600' },
-  { value: 'anthropic', label: 'Anthropic', color: 'bg-orange-600' },
-  { value: 'google', label: 'Google', color: 'bg-blue-600' },
-  { value: 'openrouter', label: 'OpenRouter', color: 'bg-purple-600' },
-  { value: 'custom', label: 'Custom', color: 'bg-gray-600' },
+  { value: 'openai', label: 'OpenAI', color: 'bg-emerald-600', supportsOAuth: true },
+  { value: 'anthropic', label: 'Anthropic', color: 'bg-orange-600', supportsOAuth: false },
+  { value: 'google', label: 'Google', color: 'bg-blue-600', supportsOAuth: false },
+  { value: 'openrouter', label: 'OpenRouter', color: 'bg-purple-600', supportsOAuth: false },
+  { value: 'custom', label: 'Custom', color: 'bg-gray-600', supportsOAuth: false },
 ] as const;
 
 const PROVIDER_MODELS: Record<string, string[]> = {
@@ -70,6 +73,8 @@ const PROVIDER_MODELS: Record<string, string[]> = {
 };
 
 export function ProviderManagement({ initialProviders }: ProviderManagementProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [providers, setProviders] = useState<Provider[]>(initialProviders);
   const [isPending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -84,6 +89,31 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
   const [isEnabled, setIsEnabled] = useState(true);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const [oauthStatus, setOAuthStatus] = useState<{ status: 'success' | 'error' | null; message: string }>({
+    status: null,
+    message: '',
+  });
+
+  // Handle OAuth callback status from URL
+  useEffect(() => {
+    const oauthStatus = searchParams.get('oauth_status');
+    const oauthMessage = searchParams.get('oauth_message');
+
+    if (oauthStatus && oauthMessage) {
+      setOAuthStatus({
+        status: oauthStatus as 'success' | 'error',
+        message: decodeURIComponent(oauthMessage),
+      });
+
+      // Clear URL parameters
+      router.replace('/settings', { scroll: false });
+
+      // Auto-hide success message after 5 seconds
+      if (oauthStatus === 'success') {
+        setTimeout(() => setOAuthStatus({ status: null, message: '' }), 5000);
+      }
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (editingProvider) {
@@ -272,6 +302,31 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
     });
   }
 
+  async function handleOAuthLogin(providerId?: string) {
+    try {
+      const response = await fetch('/api/auth/openai/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to start OAuth flow');
+      }
+
+      const { url } = await response.json();
+
+      // Redirect to OpenAI authorization page
+      window.location.href = url;
+    } catch (error) {
+      setOAuthStatus({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to start OAuth flow',
+      });
+    }
+  }
+
   function getProviderTypeInfo(type: string) {
     return PROVIDER_TYPES.find((t) => t.value === type) || PROVIDER_TYPES[4];
   }
@@ -283,13 +338,26 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
           <div>
             <CardTitle>AI Providers</CardTitle>
             <CardDescription>
-              Manage API keys and connections for AI providers
+              Manage API keys and OAuth connections for AI providers
             </CardDescription>
           </div>
+
+          {/* Quick OAuth Login Button */}
+          <Button
+            variant="outline"
+            onClick={() => handleOAuthLogin()}
+            className="gap-2"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.0993 3.8558L12.6 8.3829l2.02-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.4092-.6813zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>
+            </svg>
+            Login with ChatGPT
+          </Button>
+
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => setEditingProvider(null)}>
-                Add Provider
+                Add API Key
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
@@ -422,6 +490,35 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
         </div>
       </CardHeader>
       <CardContent>
+        {/* OAuth Status Message */}
+        {oauthStatus.status && (
+          <div
+            className={`mb-4 flex items-center gap-3 p-4 rounded-md ${
+              oauthStatus.status === 'success'
+                ? 'bg-green-950 border border-green-800 text-green-200'
+                : 'bg-red-950 border border-red-800 text-red-200'
+            }`}
+          >
+            {oauthStatus.status === 'success' ? (
+              <CheckCircle2 className="w-5 h-5" />
+            ) : null}
+            <div className="flex-1">
+              <p className="font-medium">
+                {oauthStatus.status === 'success' ? 'OAuth Connected' : 'OAuth Error'}
+              </p>
+              <p className="text-sm opacity-90">{oauthStatus.message}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setOAuthStatus({ status: null, message: '' })}
+              className="text-current opacity-70 hover:opacity-100"
+            >
+              Dismiss
+            </Button>
+          </div>
+        )}
+
         {providers.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             No AI providers configured. Add a provider to get started.
@@ -456,16 +553,30 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
                       />
                     </TableCell>
                     <TableCell>
-                      {provider.hasApiKey ? (
-                        <Badge variant="secondary">Configured</Badge>
-                      ) : provider.providerType === 'custom' ? (
-                        <Badge variant="outline">Not required</Badge>
-                      ) : (
-                        <Badge variant="outline">Not set</Badge>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {provider.hasApiKey ? (
+                          <Badge variant="secondary">
+                            {provider.hasOAuth ? 'ChatGPT Login' : 'API Key'}
+                          </Badge>
+                        ) : provider.providerType === 'custom' ? (
+                          <Badge variant="outline">Not required</Badge>
+                        ) : (
+                          <Badge variant="outline">Not set</Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
+                        {provider.providerType === 'openai' && (
+                          <Button
+                            size="sm"
+                            variant={provider.hasOAuth ? 'secondary' : 'default'}
+                            onClick={() => handleOAuthLogin(provider.id)}
+                            title={provider.hasOAuth ? 'Reconnect with ChatGPT' : 'Connect with ChatGPT'}
+                          >
+                            {provider.hasOAuth ? 'Reconnect' : 'ChatGPT Login'}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAgent } from '@/lib/agents';
+import { getAgentMetadata } from '@/lib/agent-discovery';
 import { generateAgentChat } from '@/lib/ai/model-selector';
 import { pool } from '@/lib/db';
 import type { ChatMessage } from '@/lib/types';
@@ -17,18 +17,22 @@ const AGENT_RUN_PROMPTS: Record<string, string> = {
   opportunist:
     "You are The Opportunist from The Quorum. You MUST search the database first -- do not skip this. Search across all projects (quorum_search with multiple queries, quorum_list_tasks). Check events flagged for you (metadata.considered_agents contains 'opportunist'). After searching the database, check your other available tools (email, messages, calendar, etc.) for unanswered emails, missed connections, and follow-ups that were never sent. Find quick wins, reusable work, and hidden value. Store opportunities with quorum_store_event (event_type: 'opportunity', metadata.source: 'opportunist', metadata.considered_agents: [agents who should see this]). Create tasks for actionable items (quorum_create_task). Store external findings back to the database. DELIVERY RULE: Tell the user the opportunity and the payoff. Do NOT describe your process or tools. If the memory system has very little data, tell the user -- their biggest quick win right now is feeding the system more information. Keep it short.",
   'data-collector':
-    "You are The Data Collector from The Quorum. Scan the inbox for new files (quorum_scan_inbox). Verify ingested docs are searchable (quorum_search). Check system health (quorum_integration_status). DELIVERY RULE: Only report what was processed and any errors. Example: 'Inbox: 3 files processed (notes.md, proposal.pdf, email.eml). All indexed.' If the inbox was empty, say so in one sentence. Do NOT describe your scanning process or methodology.",
+    "You are The Data Collector from The Quorum. Scan the inbox for new files (quorum_scan_inbox). Verify ingested docs are searchable (quorum_search). Check system health (quorum_integration_status). If Obsidian is configured, sync vault notes (obsidian_sync) to make them searchable. DELIVERY RULE: Only report what was processed and any errors. Example: 'Inbox: 3 files processed (notes.md, proposal.pdf, email.eml). Obsidian: 12 notes synced. All indexed.' If the inbox was empty, say so in one sentence. Do NOT describe your scanning process or methodology.",
   closer:
     "You are The Closer from The Quorum. You MUST search the database first -- do not skip this. Find claims of completion (quorum_search with queries for 'done', 'sent', 'finished', 'completed'). Check tasks marked completed without verification (quorum_list_tasks). Check events flagged for you (metadata.considered_agents contains 'closer'). After searching the database, verify claims using external tools: check sent email folders, visit websites to confirm deployments, check calendar for meeting evidence, look in messaging apps for delivery confirmations. For verified completions, update task status (quorum_complete_task) with verification metadata. For failed verifications, store events (quorum_store_event, event_type: 'verification-failed', metadata.source: 'closer'). DELIVERY RULE: Only tell the user what you checked, what you found, and what action you took. Be specific: what was verified, how, and when. Do NOT describe your process or tools. Keep it short and scannable.",
 };
 
 async function runAgent(agentName: string): Promise<string> {
-  const agent = getAgent(agentName);
-  if (!agent) {
+  const agentMetadata = await getAgentMetadata(agentName);
+  if (!agentMetadata) {
     throw new Error(`Unknown agent: ${agentName}`);
   }
 
-  const systemPrompt = AGENT_RUN_PROMPTS[agentName] || `Run as ${agent.name}`;
+  if (!agentMetadata.enabled) {
+    throw new Error(`Agent "${agentMetadata.displayName}" is currently disabled`);
+  }
+
+  const systemPrompt = AGENT_RUN_PROMPTS[agentName] || agentMetadata.systemPrompt || `Run as ${agentMetadata.name}`;
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: 'Run your analysis now. Search the database and other data sources, then report your findings.' }
@@ -50,11 +54,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const agentDef = getAgent(agent);
-    if (!agentDef) {
+    // Get agent metadata from dynamic agent discovery system
+    const agentMetadata = await getAgentMetadata(agent);
+    if (!agentMetadata) {
       return NextResponse.json(
         { error: `Unknown agent: ${agent}` },
         { status: 404 }
+      );
+    }
+
+    // Check if agent is enabled
+    if (!agentMetadata.enabled) {
+      return NextResponse.json(
+        { error: `Agent "${agentMetadata.displayName}" is currently disabled` },
+        { status: 400 }
       );
     }
 
@@ -92,7 +105,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       run_id: run.id,
-      message: `Running ${agentDef.displayName}...`,
+      message: `Running ${agentMetadata.displayName}...`,
     });
   } catch (err) {
     console.error('Agent run API error:', err);

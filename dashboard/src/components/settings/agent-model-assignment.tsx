@@ -18,7 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AGENTS } from '@/lib/agents';
+import { useAgents, type UIAgent } from '@/lib/use-agents';
+import { DynamicIcon } from '@/components/dynamic-icon';
 
 // Local state type for unsaved assignments
 interface LocalAssignment {
@@ -71,6 +72,7 @@ export function AgentModelAssignment({
   providers,
   assignments: initialAssignments,
 }: AgentModelAssignmentProps) {
+  const { agents, loading: agentsLoading } = useAgents({ includeDisabled: false });
   const [assignments, setAssignments] = useState<AgentModelAssignment[]>(
     initialAssignments
   );
@@ -310,9 +312,17 @@ export function AgentModelAssignment({
             No enabled providers with API keys configured. Add and enable a provider
             first.
           </div>
+        ) : agentsLoading ? (
+          <div className="text-center py-8 text-muted-foreground">
+            Loading agents...
+          </div>
+        ) : agents.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No agents available.
+          </div>
         ) : (
           <div className="space-y-6">
-            {AGENTS.map((agent) => {
+            {agents.map((agent) => {
               const assignment = getAssignmentForAgent(agent.name);
               const primaryProviderId = getPrimaryProviderValue(agent.name);
               const primaryModel = getPrimaryModelValue(agent.name);
@@ -331,10 +341,9 @@ export function AgentModelAssignment({
                 >
                   {/* Agent Header */}
                   <div className="flex items-center gap-3">
-                    <span
-                      className="inline-block h-3 w-3 rounded-full"
-                      style={{ backgroundColor: agent.color }}
-                    />
+                    <div style={{ color: agent.color }}>
+                      <DynamicIcon name={agent.icon} className="h-5 w-5" size={20} />
+                    </div>
                     <div>
                       <h4 className="font-medium">{agent.displayName}</h4>
                       <p className="text-xs text-muted-foreground">

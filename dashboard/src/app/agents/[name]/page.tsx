@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { getAgent } from "@/lib/agents";
+import { getAgentMetadata } from "@/lib/agent-discovery";
+import { toLegacyAgent } from "@/lib/agent-utils";
 import {
   getAgentConfig,
   listAgentRuns,
@@ -38,16 +39,28 @@ export default async function AgentPage({
   params: Promise<{ name: string }>;
 }) {
   const { name } = await params;
-  const agent = getAgent(name);
-  if (!agent) {
+  const agentMetadata = await getAgentMetadata(name);
+
+  if (!agentMetadata) {
     notFound();
   }
 
+  // Convert to extended format for compatibility with AgentDetailHeader
+  const agent = {
+    ...toLegacyAgent(agentMetadata),
+    icon: agentMetadata.icon,
+    specialties: agentMetadata.specialties,
+    reasonsToCall: agentMetadata.reasonsToCall,
+    capabilities: agentMetadata.capabilities?.map(c => c.name),
+    enabled: agentMetadata.enabled,
+  };
+
+  // Fetch data from database, gracefully handling connection errors
   const [config, runs, allEvents, allDocuments] = await Promise.all([
-    getAgentConfig(name),
-    listAgentRuns({ agent_name: name, limit: 50 }),
-    listEvents({ event_type: undefined, limit: 50 }),
-    listDocuments({ limit: 20 }),
+    getAgentConfig(name).catch(() => null),
+    listAgentRuns({ agent_name: name, limit: 50 }).catch(() => []),
+    listEvents({ event_type: undefined, limit: 50 }).catch(() => []),
+    listDocuments({ limit: 20 }).catch(() => []),
   ]);
 
   const agentEvents = allEvents.filter(

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -8,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { getAgent } from "@/lib/agents";
+import { fetchAgent, type UIAgent } from "@/lib/use-agents";
 
 export interface DocumentAnalysis {
   id: string;
@@ -31,9 +32,16 @@ export function AnalysisModal({
   open,
   onOpenChange,
 }: AnalysisModalProps) {
+  const [agent, setAgent] = useState<UIAgent | null>(null);
+
+  useEffect(() => {
+    if (analysis?.agent_name) {
+      fetchAgent(analysis.agent_name).then(setAgent);
+    }
+  }, [analysis?.agent_name]);
+
   if (!analysis) return null;
 
-  const agent = getAgent(analysis.agent_name);
   const agentColor = agent?.color ?? "#6B7280";
   const agentDisplayName = agent?.displayName ?? analysis.agent_name;
 

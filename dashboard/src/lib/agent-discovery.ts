@@ -16,6 +16,9 @@ let cacheTimestamp: number = 0;
 let tableInitialized = false;
 const CACHE_TTL = 60000; // 1 minute
 
+// In-memory override for agent enabled states (used when database is unavailable)
+const inMemoryEnabledOverrides: Map<string, boolean> = new Map();
+
 /**
  * Ensure the agents table exists
  */
@@ -46,14 +49,15 @@ export async function ensureAgentsTable(): Promise<void> {
 }
 
 /**
- * Get all enabled agents (with caching)
+ * Get all agents (with caching)
+ * @param includeDisabled - If true, returns all agents including disabled ones
  */
-export async function discoverAgents(): Promise<AgentMetadata[]> {
+export async function discoverAgents(includeDisabled: boolean = false): Promise<AgentMetadata[]> {
   const now = Date.now();
 
   // Return cached agents if fresh
   if (agentCache && (now - cacheTimestamp) < CACHE_TTL) {
-    return agentCache.filter(a => a.enabled);
+    return includeDisabled ? agentCache : agentCache.filter(a => a.enabled);
   }
 
   // Start with default agents
@@ -62,12 +66,11 @@ export async function discoverAgents(): Promise<AgentMetadata[]> {
   // Ensure table exists
   await ensureAgentsTable();
 
-  // Load custom agent configurations from database
+  // Load custom agent configurations from database (including disabled ones for merging)
   try {
     const result = await pool.query(
       `SELECT name, config, enabled, created_at, updated_at
        FROM quorum_agents
-       WHERE enabled = true
        ORDER BY name ASC`
     );
 
@@ -98,17 +101,27 @@ export async function discoverAgents(): Promise<AgentMetadata[]> {
     console.warn('Could not load custom agents from database:', error);
   }
 
+  // Apply in-memory enabled overrides
+  for (let i = 0; i < agents.length; i++) {
+    const agent = agents[i];
+    if (inMemoryEnabledOverrides.has(agent.name)) {
+      agents[i] = { ...agent, enabled: inMemoryEnabledOverrides.get(agent.name)! };
+    }
+  }
+
   agentCache = agents;
   cacheTimestamp = now;
 
-  return agents.filter(a => a.enabled);
+  return includeDisabled ? agents : agents.filter(a => a.enabled);
 }
 
 /**
  * Get a specific agent by name
+ * @param name - Agent name
+ * @param includeDisabled - If true, will return disabled agents too
  */
-export async function getAgentMetadata(name: string): Promise<AgentMetadata | null> {
-  const agents = await discoverAgents();
+export async function getAgentMetadata(name: string, includeDisabled: boolean = true): Promise<AgentMetadata | null> {
+  const agents = await discoverAgents(includeDisabled);
   return agents.find(a => a.name === name) || null;
 }
 
@@ -117,8 +130,8 @@ export async function getAgentMetadata(name: string): Promise<AgentMetadata | nu
  * This is what agents use to understand what other agents exist
  */
 export async function getAgentRoster(): Promise<AgentRosterEntry[]> {
-  const agents = await discoverAgents();
-  return agents.map(agentToRosterEntry);
+  const agents = await discoverAgents(true); // Get all agents including disabled for roster
+  return agents.filter(a => a.enabled).map(agentToRosterEntry);
 }
 
 /**
@@ -126,8 +139,9 @@ export async function getAgentRoster(): Promise<AgentRosterEntry[]> {
  * This gets injected into agent system prompts
  */
 export async function getAgentRosterPrompt(): Promise<string> {
-  const agents = await discoverAgents();
-  return generateAgentRosterPrompt(agents);
+  const agents = await discoverAgents(true); // Get all agents including disabled
+  const enabledAgents = agents.filter(a => a.enabled);
+  return generateAgentRosterPrompt(enabledAgents);
 }
 
 /**
@@ -183,18 +197,26 @@ export async function findRelevantAgents(content: string): Promise<AgentMetadata
 
 /**
  * Register or update a custom agent in the database
+ * Falls back to in-memory storage if database is unavailable
  */
 export async function registerAgent(metadata: AgentMetadata): Promise<AgentMetadata> {
-  const result = await pool.query(
-    `INSERT INTO quorum_agents (name, config, enabled)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (name) DO UPDATE SET
-       config = EXCLUDED.config,
-       enabled = EXCLUDED.enabled,
-       updated_at = NOW()
-     RETURNING *`,
-    [metadata.name, JSON.stringify(metadata), metadata.enabled]
-  );
+  try {
+    await ensureAgentsTable();
+    const result = await pool.query(
+      `INSERT INTO quorum_agents (name, config, enabled)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (name) DO UPDATE SET
+         config = EXCLUDED.config,
+         enabled = EXCLUDED.enabled,
+         updated_at = NOW()
+       RETURNING *`,
+      [metadata.name, JSON.stringify(metadata), metadata.enabled]
+    );
+  } catch (error) {
+    // If database is unavailable, fall back to in-memory storage
+    console.warn('Database unavailable for agent registration, using in-memory fallback:', error);
+    inMemoryEnabledOverrides.set(metadata.name, metadata.enabled);
+  }
 
   // Invalidate cache
   agentCache = null;
@@ -204,16 +226,25 @@ export async function registerAgent(metadata: AgentMetadata): Promise<AgentMetad
 
 /**
  * Enable or disable an agent
+ * Falls back to in-memory storage if database is unavailable
  */
 export async function setAgentEnabled(name: string, enabled: boolean): Promise<void> {
-  await pool.query(
-    `INSERT INTO quorum_agents (name, config, enabled)
-     VALUES ($1, '{}', $2)
-     ON CONFLICT (name) DO UPDATE SET
-       enabled = EXCLUDED.enabled,
-       updated_at = NOW()`,
-    [name, enabled]
-  );
+  try {
+    // First try to update in database
+    await ensureAgentsTable();
+    await pool.query(
+      `INSERT INTO quorum_agents (name, config, enabled)
+       VALUES ($1, '{}', $2)
+       ON CONFLICT (name) DO UPDATE SET
+         enabled = EXCLUDED.enabled,
+         updated_at = NOW()`,
+      [name, enabled]
+    );
+  } catch (error) {
+    // If database is unavailable, fall back to in-memory storage
+    console.warn('Database unavailable for agent enable/disable, using in-memory fallback:', error);
+    inMemoryEnabledOverrides.set(name, enabled);
+  }
 
   // Invalidate cache
   agentCache = null;

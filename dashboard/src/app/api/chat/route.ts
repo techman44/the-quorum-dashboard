@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAgent } from '@/lib/agents';
+import { getAgentMetadata } from '@/lib/agent-discovery';
 import { storeChatMessage } from '@/lib/db';
 import { streamAgentChat } from '@/lib/ai/model-selector';
 import { getSession, addMessageToSession } from '@/lib/ai/sessions';
@@ -24,11 +24,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const agentDef = getAgent(agent);
-    if (!agentDef) {
+    // Get agent metadata from dynamic agent discovery system
+    const agentMetadata = await getAgentMetadata(agent);
+    if (!agentMetadata) {
       return NextResponse.json(
         { error: `Unknown agent: ${agent}` },
         { status: 404 }
+      );
+    }
+
+    // Check if agent is enabled
+    if (!agentMetadata.enabled) {
+      return NextResponse.json(
+        { error: `Agent "${agentMetadata.displayName}" is currently disabled` },
+        { status: 400 }
       );
     }
 
@@ -41,9 +50,8 @@ export async function POST(request: NextRequest) {
     // Get or create session
     const session = await getSession(sessionId, agent);
 
-    // Get agent prompt from AGENT_PROMPTS if available
-    const { AGENT_PROMPTS } = await import('@/lib/agents');
-    const systemPrompt = AGENT_PROMPTS[agent] || `You are ${agentDef.displayName}.`;
+    // Build system prompt from agent metadata
+    const systemPrompt = agentMetadata.systemPrompt || `You are ${agentMetadata.displayName}. ${agentMetadata.description}`;
 
     // Build messages with system prompt
     const messages: ChatMessage[] = [

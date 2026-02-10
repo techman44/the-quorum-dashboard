@@ -105,6 +105,7 @@ export const DEFAULT_AGENTS: AgentMetadata[] = [
     ],
     capabilities: [
       { name: 'search_memory', description: 'Search across all stored information semantically' },
+      { name: 'search_obsidian', description: 'Search Obsidian vault notes and contents' },
       { name: 'find_connections', description: 'Identify relationships between entities' },
       { name: 'surface_context', description: 'Retrieve relevant historical context' }
     ],
@@ -116,8 +117,8 @@ export const DEFAULT_AGENTS: AgentMetadata[] = [
       { type: 'database', name: 'quorum_events' },
       { type: 'database', name: 'embeddings' }
     ],
-    tools: ['quorum_search', 'quorum_store_event'],
-    tags: ['memory', 'context', 'connections']
+    tools: ['quorum_search', 'obsidian_search', 'quorum_store_event'],
+    tags: ['memory', 'context', 'connections', 'obsidian']
   },
   {
     name: 'executor',
@@ -283,7 +284,8 @@ export const DEFAULT_AGENTS: AgentMetadata[] = [
     capabilities: [
       { name: 'scan_inbox', description: 'Process new files from inbox' },
       { name: 'store_document', description: 'Store and tag documents' },
-      { name: 'verify_indexing', description: 'Ensure content is searchable' }
+      { name: 'verify_indexing', description: 'Ensure content is searchable' },
+      { name: 'sync_obsidian', description: 'Sync Obsidian vault notes to Quorum documents' }
     ],
     collaboratesWith: [],
     dependsOn: [],
@@ -291,8 +293,8 @@ export const DEFAULT_AGENTS: AgentMetadata[] = [
     requires: [
       { type: 'service', name: 'ollama' }
     ],
-    tools: ['quorum_scan_inbox', 'quorum_store', 'quorum_integration_status'],
-    tags: ['ingestion', 'processing', 'monitoring']
+    tools: ['quorum_scan_inbox', 'quorum_store', 'quorum_integration_status', 'obsidian_sync'],
+    tags: ['ingestion', 'processing', 'monitoring', 'obsidian']
   },
   {
     name: 'closer',

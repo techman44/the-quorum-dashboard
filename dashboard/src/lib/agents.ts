@@ -1,12 +1,15 @@
 /**
- * Agent definitions - now using dynamic discovery
+ * Agent definitions - client-safe exports
  *
- * This file provides backwards compatibility while transitioning
- * to the dynamic agent system.
+ * This file provides client-safe agent data for UI components.
+ * Server-side dynamic discovery is in agent-discovery.ts.
+ *
+ * DEPRECATED: For new code, use useAgents() hook from ./use-agents.ts
+ * which fetches from the /api/agents endpoint for dynamic agent discovery.
  */
 
-import { discoverAgents, getAgentRosterEntry } from './agent-discovery';
-import type { AgentMetadata, AgentRosterEntry } from './agent-schema';
+// Re-export types without importing the server-side code
+export type { AgentMetadata, AgentRosterEntry } from './agent-schema';
 
 // Legacy agent type for backwards compatibility
 export interface Agent {
@@ -18,8 +21,9 @@ export interface Agent {
   icon?: string;
 }
 
-// Default agents list for fallback (matches the schema defaults)
-const DEFAULT_AGENTS: Agent[] = [
+// Default agents list (matches the schema defaults in agent-schema.ts)
+// This is kept for backwards compatibility but is deprecated
+export const AGENTS: Agent[] = [
   { name: 'connector', displayName: 'The Connector', color: '#3B82F6', schedule: '*/15 * * * *', description: 'Finds non-obvious connections between information', icon: 'link' },
   { name: 'executor', displayName: 'The Executor', color: '#EF4444', schedule: '0 * * * *', description: 'Tracks commitments, deadlines, and accountability', icon: 'gavel' },
   { name: 'strategist', displayName: 'The Strategist', color: '#8B5CF6', schedule: '0 6 * * *', description: 'Daily strategic synthesis and reprioritization', icon: 'compass' },
@@ -32,50 +36,16 @@ const DEFAULT_AGENTS: Agent[] = [
 
 /**
  * Get all agents (legacy format)
- * Returns default agents for now - will be dynamic once frontend is updated
+ * @deprecated Use useAgents() hook from ./use-agents.ts instead
  */
 export function getAgents(): Agent[] {
-  return DEFAULT_AGENTS;
+  return AGENTS;
 }
 
 /**
  * Get an agent by name
+ * @deprecated Use useAgents() hook or fetchAgent() from ./use-agents.ts instead
  */
 export function getAgent(name: string): Agent | undefined {
-  return DEFAULT_AGENTS.find(a => a.name === name);
+  return AGENTS.find(a => a.name === name);
 }
-
-/**
- * Get agents with full metadata (for dynamic system)
- */
-export async function getAgentsWithMetadata(): Promise<AgentMetadata[]> {
-  return await discoverAgents();
-}
-
-/**
- * Get a single agent with metadata
- */
-export async function getAgentWithMetadata(name: string): Promise<AgentMetadata | null> {
-  const agents = await discoverAgents();
-  return agents.find(a => a.name === name) || null;
-}
-
-/**
- * Get the agent roster for prompt injection
- */
-export async function getAgentRoster(): Promise<AgentRosterEntry[]> {
-  const agents = await discoverAgents();
-  return agents.map(agent => ({
-    name: agent.name,
-    displayName: agent.displayName,
-    specialties: agent.specialties,
-    reasonsToCall: agent.reasonsToCall,
-    capabilities: agent.capabilities.map(c => c.name),
-  }));
-}
-
-// Export the default agents list for backwards compatibility
-export const AGENTS = DEFAULT_AGENTS;
-
-// Export types
-export type { AgentMetadata, AgentRosterEntry } from './agent-schema';

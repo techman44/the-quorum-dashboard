@@ -24,6 +24,8 @@ export interface AIProvider {
   baseUrl?: string; // For custom providers
   apiKey?: string;
   oauthToken?: string;
+  oauthRefreshToken?: string;
+  oauthExpiresAt?: Date;
   isEnabled: boolean;
   metadata?: Record<string, unknown>;
 }

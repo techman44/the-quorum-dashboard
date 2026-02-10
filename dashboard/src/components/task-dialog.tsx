@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Dialog,
@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { updateTaskDetails, deleteTask } from '@/lib/actions';
-import { AGENTS } from '@/lib/agents';
+import { useAgents, type UIAgent } from '@/lib/use-agents';
 import type { QuorumTask } from '@/lib/types';
 
 export function TaskDialog({
@@ -34,6 +34,7 @@ export function TaskDialog({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const { agents, loading } = useAgents({ includeDisabled: false });
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -140,8 +141,8 @@ export function TaskDialog({
                 list="agent-names"
               />
               <datalist id="agent-names">
-                {AGENTS.map((a) => (
-                  <option key={a.name} value={a.name} />
+                {!loading && agents.map((a) => (
+                  <option key={a.name} value={a.name}>{a.displayName}</option>
                 ))}
               </datalist>
             </div>

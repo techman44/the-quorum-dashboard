@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Dialog,
@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { createNewTask } from '@/lib/actions';
-import { AGENTS } from '@/lib/agents';
+import { useAgents, type UIAgent } from '@/lib/use-agents';
 
 export function NewTaskDialog({
   open,
@@ -32,6 +32,7 @@ export function NewTaskDialog({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [priority, setPriority] = useState('medium');
+  const { agents, loading } = useAgents({ includeDisabled: false });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -85,8 +86,8 @@ export function NewTaskDialog({
                 <label className="text-sm font-medium">Owner</label>
                 <Input name="owner" placeholder="Assign to..." list="new-task-agents" />
                 <datalist id="new-task-agents">
-                  {AGENTS.map((a) => (
-                    <option key={a.name} value={a.name} />
+                  {!loading && agents.map((a) => (
+                    <option key={a.name} value={a.name}>{a.displayName}</option>
                   ))}
                 </datalist>
               </div>

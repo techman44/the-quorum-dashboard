@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { getAgent } from '@/lib/agents';
+import { getAgentMetadata } from '@/lib/agent-discovery';
 import { generateAgentChat } from '@/lib/ai/model-selector';
 import type { QuorumDocument, QuorumEvent, ChatMessage } from '@/lib/types';
 
@@ -23,11 +23,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const agentDef = getAgent(agent);
-    if (!agentDef) {
+    // Get agent metadata from dynamic agent discovery system
+    const agentMetadata = await getAgentMetadata(agent);
+    if (!agentMetadata) {
       return NextResponse.json(
         { error: `Unknown agent: ${agent}` },
         { status: 404 }
+      );
+    }
+
+    // Check if agent is enabled
+    if (!agentMetadata.enabled) {
+      return NextResponse.json(
+        { error: `Agent "${agentMetadata.displayName}" is currently disabled` },
+        { status: 400 }
       );
     }
 
@@ -45,9 +54,9 @@ export async function POST(request: Request) {
 
     const doc = docResult.rows[0];
 
-    const prompt = `Review this document and provide your analysis as ${agentDef.displayName}: Title: ${doc.title}\n\nContent: ${doc.content}`;
+    const prompt = `Review this document and provide your analysis as ${agentMetadata.displayName}: Title: ${doc.title}\n\nContent: ${doc.content}`;
     const messages: ChatMessage[] = [
-      { role: 'system', content: `You are ${agentDef.displayName}. Analyze the given document and provide your insights.` },
+      { role: 'system', content: agentMetadata.systemPrompt || `You are ${agentMetadata.displayName}. Analyze the given document and provide your insights.` },
       { role: 'user', content: prompt }
     ];
 
@@ -59,7 +68,7 @@ export async function POST(request: Request) {
        RETURNING *`,
       [
         'agent_analysis',
-        `${agentDef.displayName} analysis of "${doc.title}"`,
+        `${agentMetadata.displayName} analysis of "${doc.title}"`,
         analysis,
         JSON.stringify({ source: agent, document_id: doc.id }),
       ]

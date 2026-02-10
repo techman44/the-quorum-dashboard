@@ -18,6 +18,8 @@ export interface AgentModelAssignment {
 
 export interface ProviderWithConfig extends AIProvider {
   apiKeyDecrypted?: string;
+  oauthRefreshToken?: string;
+  oauthExpiresAt?: Date;
 }
 
 /**
@@ -78,6 +80,8 @@ export async function getAllProviders(): Promise<ProviderWithConfig[]> {
       baseUrl: row.base_url as string | undefined,
       apiKey: row.api_key_encrypted as string | undefined,
       oauthToken: row.oauth_token as string | undefined,
+      oauthRefreshToken: row.oauth_refresh_token as string | undefined,
+      oauthExpiresAt: row.oauth_expires_at as Date | undefined,
       isEnabled: (row.is_enabled as boolean) ?? true,
       metadata: (row.metadata as Record<string, unknown>) ?? {},
     };
@@ -116,6 +120,8 @@ export async function getProvider(providerId: string): Promise<ProviderWithConfi
     baseUrl: row.base_url as string | undefined,
     apiKey: row.api_key_encrypted as string | undefined,
     oauthToken: row.oauth_token as string | undefined,
+    oauthRefreshToken: row.oauth_refresh_token as string | undefined,
+    oauthExpiresAt: row.oauth_expires_at as Date | undefined,
     isEnabled: (row.is_enabled as boolean) ?? true,
     metadata: (row.metadata as Record<string, unknown>) ?? {},
   };
@@ -179,9 +185,17 @@ export async function createAgentProvider(agentName: string) {
 
   const { provider, model } = config;
 
-  // Add model to provider metadata
+  // Add model to provider metadata and include OAuth fields
   const providerWithModel: AIProvider = {
-    ...provider,
+    id: provider.id,
+    name: provider.name,
+    type: provider.type,
+    baseUrl: provider.baseUrl,
+    apiKey: provider.apiKeyDecrypted, // Use decrypted API key
+    oauthToken: provider.oauthToken,
+    oauthRefreshToken: provider.oauthRefreshToken,
+    oauthExpiresAt: provider.oauthExpiresAt,
+    isEnabled: provider.isEnabled,
     metadata: {
       ...provider.metadata,
       model,

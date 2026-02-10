@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { QuorumDocumentWithEmbedding } from "@/lib/types";
 import { deleteDocumentAction, triggerEmbedding } from "@/lib/actions";
-import { AGENTS, getAgent } from "@/lib/agents";
+import { useAgents, getAgentByName, type UIAgent } from "@/lib/use-agents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +77,7 @@ const PAGE_SIZE = 50;
 export function DocumentTable({ documents }: DocumentTableProps) {
   const router = useRouter();
   const { success, error } = useToast();
+  const { agents, loading: agentsLoading } = useAgents({ includeDisabled: false });
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [viewDoc, setViewDoc] = useState<QuorumDocumentWithEmbedding | null>(
@@ -166,16 +167,17 @@ export function DocumentTable({ documents }: DocumentTableProps) {
         body: JSON.stringify({ document_id: docId, agent: agentName }),
       });
       const data = await res.json();
+      const agent = getAgentByName(agents, agentName);
       if (!res.ok) {
         console.error("Agent trigger failed:", data.error);
         error(
           "Analysis Failed",
-          `Failed to trigger ${getAgent(agentName)?.displayName ?? agentName}`
+          `Failed to trigger ${agent?.displayName ?? agentName}`
         );
       } else {
         const doc = documents.find((d) => d.id === docId);
         success(
-          `${getAgent(agentName)?.displayName ?? agentName} Complete`,
+          `${agent?.displayName ?? agentName} Complete`,
           doc?.title ? `Analyzed "${doc.title}"` : "Document analyzed successfully"
         );
         // Refresh analyses after successful trigger
@@ -346,7 +348,7 @@ export function DocumentTable({ documents }: DocumentTableProps) {
                     ) : (
                       <div className="flex flex-col gap-1.5">
                         {doc.analyses.slice(0, 2).map((analysis) => {
-                          const agent = getAgent(analysis.agent_name);
+                          const agent = getAgentByName(agents, analysis.agent_name);
                           return (
                             <button
                               key={analysis.id}
@@ -480,21 +482,31 @@ export function DocumentTable({ documents }: DocumentTableProps) {
                           align="end"
                           className="bg-zinc-900 border-zinc-700"
                         >
-                          {AGENTS.map((agent) => (
-                            <DropdownMenuItem
-                              key={agent.name}
-                              onClick={() =>
-                                handleTriggerAgent(doc.id, agent.name)
-                              }
-                              className="text-zinc-100 focus:bg-zinc-800 cursor-pointer"
-                            >
-                              <span
-                                className="inline-block w-2 h-2 rounded-full mr-2 shrink-0"
-                                style={{ backgroundColor: agent.color }}
-                              />
-                              {agent.displayName}
+                          {agentsLoading ? (
+                            <DropdownMenuItem disabled>
+                              Loading agents...
                             </DropdownMenuItem>
-                          ))}
+                          ) : agents.length === 0 ? (
+                            <DropdownMenuItem disabled>
+                              No agents available
+                            </DropdownMenuItem>
+                          ) : (
+                            agents.map((agent) => (
+                              <DropdownMenuItem
+                                key={agent.name}
+                                onClick={() =>
+                                  handleTriggerAgent(doc.id, agent.name)
+                                }
+                                className="text-zinc-100 focus:bg-zinc-800 cursor-pointer"
+                              >
+                                <span
+                                  className="inline-block w-2 h-2 rounded-full mr-2 shrink-0"
+                                  style={{ backgroundColor: agent.color }}
+                                />
+                                {agent.displayName}
+                              </DropdownMenuItem>
+                            ))
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
 

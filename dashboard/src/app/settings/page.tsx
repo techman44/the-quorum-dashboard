@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getStats, listAgentConfigs, pool, listAIProviders, listAgentModelAssignments, type AIProvider } from '@/lib/db';
-import { AGENTS } from '@/lib/agents';
+import { discoverAgents } from '@/lib/agent-discovery';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -21,7 +21,9 @@ import { AgentToggle } from '@/components/agent-toggle';
 import { ProviderManagement } from '@/components/settings/provider-management';
 import { AgentModelAssignment } from '@/components/settings/agent-model-assignment';
 import { EmbeddingProvider } from '@/components/settings/embedding-provider';
+import { ObsidianSettings } from '@/components/settings/obsidian-settings';
 import type { AgentModelAssignment as AgentModelAssignmentType } from '@/lib/types';
+import { toLegacyAgent } from '@/lib/use-agents';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,7 @@ interface SafeProvider {
   isEnabled: boolean;
   baseUrl?: string;
   hasApiKey: boolean;
+  hasOAuth?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -67,7 +70,8 @@ async function getSafeProviders(): Promise<SafeProvider[]> {
       name: p.name,
       isEnabled: p.is_enabled !== undefined ? p.is_enabled : p.isEnabled,
       baseUrl: (p.base_url || p.baseUrl) ?? undefined,
-      hasApiKey: !!(p.api_key_encrypted || p.apiKeyEncrypted),
+      hasApiKey: !!(p.api_key_encrypted || p.apiKeyEncrypted) || !!(p.oauth_token || p.oauthToken),
+      hasOAuth: !!(p.oauth_token || p.oauthToken),
       createdAt: p.created_at || p.createdAt,
       updatedAt: p.updated_at || p.updatedAt,
     }));
@@ -85,7 +89,7 @@ async function getAgentAssignments(): Promise<AgentModelAssignmentType[]> {
 }
 
 export default async function SettingsPage() {
-  const [stats, dbConnected, ollamaConnected, agentConfigs, providers, agentAssignments] =
+  const [stats, dbConnected, ollamaConnected, agentConfigs, providers, agentAssignments, agents] =
     await Promise.all([
       getStats(),
       checkDbConnection(),
@@ -93,9 +97,10 @@ export default async function SettingsPage() {
       listAgentConfigs(),
       getSafeProviders(),
       getAgentAssignments(),
+      discoverAgents(),
     ]);
 
-  const agentMap = new Map(AGENTS.map((a) => [a.name, a]));
+  const agentMap = new Map(agents.map((a) => [a.name, toLegacyAgent(a)]));
 
   const ollamaHost = process.env.OLLAMA_HOST ?? 'http://localhost:11434';
   const dbHost = process.env.QUORUM_DB_HOST ?? '192.168.20.150';
@@ -197,7 +202,7 @@ export default async function SettingsPage() {
             </TableHeader>
             <TableBody>
               {agentConfigs.map((config) => {
-                const agent = agentMap.get(config.agent_name as typeof AGENTS[number]['name']);
+                const agent = agentMap.get(config.agent_name);
                 const color = agent?.color ?? '#6B7280';
                 return (
                   <TableRow key={config.agent_name}>
@@ -266,7 +271,10 @@ export default async function SettingsPage() {
       {/* Section 5: Embedding Provider */}
       <EmbeddingProvider providers={providers} />
 
-      {/* Section 6: Database Configuration */}
+      {/* Section 6: Obsidian Integration */}
+      <ObsidianSettings />
+
+      {/* Section 7: Database Configuration */}
 
       {/* Section 5: Database Configuration */}
       <Card>

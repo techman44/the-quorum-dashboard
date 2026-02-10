@@ -1098,6 +1098,8 @@ export interface AIProvider {
   isEnabled: boolean;
   apiKeyEncrypted?: string;
   oauthToken?: string;
+  oauthRefreshToken?: string;
+  oauthExpiresAt?: Date;
   baseUrl?: string;
   metadata?: Record<string, unknown>;
   createdAt: Date;
@@ -1152,6 +1154,9 @@ export async function getAIProvider(id: string): Promise<AIProvider | null> {
       provider_type as "providerType",
       name,
       api_key_encrypted as "apiKeyEncrypted",
+      oauth_token as "oauthToken",
+      oauth_refresh_token as "oauthRefreshToken",
+      oauth_expires_at as "oauthExpiresAt",
       base_url as "baseUrl",
       is_enabled as "isEnabled",
       metadata,
@@ -1170,6 +1175,9 @@ export async function listAIProviders(): Promise<AIProvider[]> {
       provider_type as "providerType",
       name,
       api_key_encrypted as "apiKeyEncrypted",
+      oauth_token as "oauthToken",
+      oauth_refresh_token as "oauthRefreshToken",
+      oauth_expires_at as "oauthExpiresAt",
       base_url as "baseUrl",
       is_enabled as "isEnabled",
       metadata,
@@ -1241,6 +1249,63 @@ export async function deleteAIProvider(id: string): Promise<boolean> {
     [id]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+// ─── OAuth Token Management ─────────────────────────────────────────────────────
+
+export async function updateProviderOAuthTokens(
+  id: string,
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: Date;
+  }
+): Promise<AIProvider | null> {
+  const result = await pool.query<AIProvider>(
+    `UPDATE quorum_ai_providers
+     SET oauth_token = $1,
+         oauth_refresh_token = $2,
+         oauth_expires_at = $3,
+         updated_at = NOW()
+     WHERE id = $4
+     RETURNING id, provider_type as "providerType", name, api_key_encrypted as "apiKeyEncrypted",
+              oauth_token as "oauthToken", oauth_refresh_token as "oauthRefreshToken", oauth_expires_at as "oauthExpiresAt",
+              base_url as "baseUrl", is_enabled as "isEnabled", metadata,
+              created_at as "createdAt", updated_at as "updatedAt"`,
+    [tokens.accessToken, tokens.refreshToken, tokens.expiresAt, id]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function getProviderByOAuthAccountId(
+  accountId: string
+): Promise<AIProvider | null> {
+  const result = await pool.query<AIProvider>(
+    `SELECT
+      id,
+      provider_type as "providerType",
+      name,
+      api_key_encrypted as "apiKeyEncrypted",
+      oauth_token as "oauthToken",
+      oauth_refresh_token as "oauthRefreshToken",
+      oauth_expires_at as "oauthExpiresAt",
+      base_url as "baseUrl",
+      is_enabled as "isEnabled",
+      metadata,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    FROM quorum_ai_providers
+    WHERE metadata->>'oauthAccountId' = $1`,
+    [accountId]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Get OAuth account ID from provider metadata
+ */
+export function getOAuthAccountId(provider: AIProvider): string | undefined {
+  return provider.metadata?.oauthAccountId as string | undefined;
 }
 
 // Agent Model Assignment CRUD
