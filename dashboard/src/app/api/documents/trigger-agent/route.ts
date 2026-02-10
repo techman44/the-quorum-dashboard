@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { pool } from '@/lib/db-pool';
 import { getAgentMetadata } from '@/lib/agent-discovery';
 import { generateAgentChat } from '@/lib/ai/model-selector';
 import type { QuorumDocument, QuorumEvent, ChatMessage } from '@/lib/types';

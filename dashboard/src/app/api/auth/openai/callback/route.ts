@@ -326,4 +326,4 @@ function redirectToSettings(status: 'success' | 'error', message: string): NextR
 }
 
 // Import pool for direct database access
-import { pool } from '@/lib/db';
+import { pool } from '@/lib/db-pool';

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { pool, generateAndStoreEmbedding } from '@/lib/db';
+import { pool } from '@/lib/db-pool';
+import { generateAndStoreEmbedding } from '@/lib/db';
 import type { QuorumDocument } from '@/lib/types';
 
 export async function POST(request: Request) {

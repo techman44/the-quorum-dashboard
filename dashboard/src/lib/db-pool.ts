@@ -30,13 +30,8 @@ export function getPool(): Pool {
 // Export a Pool-like object that delegates to the real pool
 export const pool = new Proxy({} as Pool, {
   get(_target, prop) {
-    return getPool()[prop as keyof Pool];
-  },
-  set(_target, prop, value) {
-    getPool()[prop as keyof Pool] = value;
-    return true;
-  },
-  has(_target, prop) {
-    return prop in getPool();
+    const p = getPool();
+    // @ts-expect-error - dynamic property access
+    return p[prop];
   },
 });

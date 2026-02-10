@@ -7,7 +7,8 @@
  * 3. Future: File system scanning for custom skills
  */
 
-import { pool, upsertSkillConfig, getSkillConfig, listSkillConfigs, type SkillConfig } from './db';
+import { pool } from './db-pool';
+import { upsertSkillConfig, getSkillConfig, listSkillConfigs, type SkillConfig } from './db';
 import {
   DEFAULT_SKILLS,
   getSkillMetadata,

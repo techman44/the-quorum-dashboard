@@ -1,5 +1,5 @@
 // Model selector for AI agents
-import { pool } from '../db';
+import { pool } from '../db-pool';
 import type { AIProvider, ChatMessage } from './providers/base';
 import type { ChatOptions } from './providers/base';
 import { createProvider } from './providers';

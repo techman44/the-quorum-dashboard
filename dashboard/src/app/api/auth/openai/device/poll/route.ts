@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyDeviceCode, extractMetadataFromIdToken, calculateExpirationDate } from '@/lib/oauth/openai-device-code';
-import { pool } from '@/lib/db';
+import { pool } from '@/lib/db-pool';
 
 /**
  * POST /api/auth/openai/device/poll

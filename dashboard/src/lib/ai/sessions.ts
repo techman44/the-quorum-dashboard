@@ -1,5 +1,5 @@
 // Session management for AI conversations
-import { pool } from '../db';
+import { pool } from '../db-pool';
 import type { ChatMessage } from './providers/base';
 
 export interface Session {

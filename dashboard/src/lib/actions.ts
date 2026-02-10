@@ -8,8 +8,8 @@ import {
   deleteDocument as dbDeleteDocument,
   updateAgentConfig as dbUpdateAgentConfig,
   generateAndStoreEmbedding,
-  pool,
 } from './db';
+import { pool } from './db-pool';
 import type { QuorumDocument } from './types';
 
 export async function updateTaskStatus(taskId: string, newStatus: string) {

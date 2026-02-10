@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { getStats, listAgentConfigs, pool, listAIProviders, listAgentModelAssignments, type AIProvider } from '@/lib/db';
+import { getStats, listAgentConfigs, listAIProviders, listAgentModelAssignments, type AIProvider } from '@/lib/db';
+import { pool } from '@/lib/db-pool';
 import { discoverAgents } from '@/lib/agent-discovery';
 import { Badge } from '@/components/ui/badge';
 import {

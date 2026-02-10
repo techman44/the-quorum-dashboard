@@ -3,7 +3,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
-import { pool } from '@/lib/db';
+import { pool } from '@/lib/db-pool';
 
 const execAsync = promisify(exec);
 

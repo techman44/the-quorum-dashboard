@@ -7,7 +7,7 @@
  * 3. Future: File system scanning for custom agents
  */
 
-import { pool } from './db';
+import { pool } from './db-pool';
 import { AgentMetadata, DEFAULT_AGENTS, agentToRosterEntry, AgentRosterEntry, generateAgentRosterPrompt } from './agent-schema';
 
 // In-memory cache of discovered agents

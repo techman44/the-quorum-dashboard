@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentMetadata } from '@/lib/agent-discovery';
 import { generateAgentChat } from '@/lib/ai/model-selector';
-import { pool } from '@/lib/db';
+import { pool } from '@/lib/db-pool';
 import type { ChatMessage } from '@/lib/types';
 
 // Agent-specific prompts for scheduled runs
