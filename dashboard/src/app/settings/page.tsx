@@ -24,8 +24,20 @@ import { EmbeddingProvider } from '@/components/settings/embedding-provider';
 import { ObsidianSettings } from '@/components/settings/obsidian-settings';
 import { SkillsManagement } from '@/components/settings/skills-management';
 import type { AgentModelAssignment as AgentModelAssignmentType } from '@/lib/types';
-import { toLegacyAgent } from '@/lib/use-agents';
 import { discoverSkills } from '@/lib/skills-discovery';
+import type { AgentMetadata } from '@/lib/agent-schema';
+
+// Server-side helper to convert AgentMetadata to legacy format
+function toLegacyAgent(agent: AgentMetadata) {
+  return {
+    name: agent.name,
+    displayName: agent.displayName,
+    color: agent.color,
+    schedule: agent.schedule || '',
+    description: agent.description,
+    icon: agent.icon,
+  };
+}
 
 export const dynamic = 'force-dynamic';
 
