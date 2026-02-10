@@ -7,13 +7,23 @@ export function getPool(): Pool {
     return _pool;
   }
 
-  // Read all env vars at runtime in this closure
-  // This prevents Next.js from doing build-time substitution
-  const host = process.env.QUORUM_DB_HOST || 'quorum-postgres';
-  const port = parseInt(process.env.QUORUM_DB_PORT || '5432', 10);
-  const database = process.env.QUORUM_DB_NAME || 'quorum';
-  const user = process.env.QUORUM_DB_USER || 'quorum';
-  const password = process.env.QUORUM_DB_PASSWORD ?? '';
+  // Read env vars using dynamic access to prevent Next.js build-time substitution
+  // Next.js cannot statically analyze when the key is constructed dynamically
+  const envKeys = ['QUORUM_DB_HOST', 'QUORUM_DB_PORT', 'QUORUM_DB_NAME', 'QUORUM_DB_USER', 'QUORUM_DB_PASSWORD'];
+  const values: Record<string, string> = {};
+
+  for (const key of envKeys) {
+    // Use dynamic access with type assertion
+    const value = process.env[key as keyof NodeJS.ProcessEnv];
+    values[key] = value ?? '';
+  }
+
+  // Apply defaults
+  const host = values.QUORUM_DB_HOST || 'quorum-postgres';
+  const port = parseInt(values.QUORUM_DB_PORT || '5432', 10);
+  const database = values.QUORUM_DB_NAME || 'quorum';
+  const user = values.QUORUM_DB_USER || 'quorum';
+  const password = values.QUORUM_DB_PASSWORD ?? '';
 
   _pool = new Pool({
     host,
