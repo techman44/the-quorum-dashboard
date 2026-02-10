@@ -15,19 +15,15 @@ export function getPool(): Pool {
   for (const key of envKeys) {
     // Use dynamic access with type assertion
     const value = process.env[key as keyof NodeJS.ProcessEnv];
-    // Debug logging
-    if (typeof window === 'undefined') {
-      console.log(`[db-pool] ${key} =`, value === undefined || value === null ? '<undefined/null>' : `'${value}'`);
-    }
     values[key] = value === undefined || value === null ? '' : String(value);
   }
 
-  // Apply defaults
+  // Apply defaults - handle empty strings from undefined env vars
   const host = values.QUORUM_DB_HOST || 'quorum-postgres';
   const port = parseInt(values.QUORUM_DB_PORT || '5432', 10);
   const database = values.QUORUM_DB_NAME || 'quorum';
   const user = values.QUORUM_DB_USER || 'quorum';
-  const password = values.QUORUM_DB_PASSWORD ?? '';
+  const password = values.QUORUM_DB_PASSWORD || '';
 
   console.log('[db-pool] Creating pool with:', { host, port, database, user, password: `'${password}'` });
 
