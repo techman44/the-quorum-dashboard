@@ -14,32 +14,20 @@ import type {
 
 // ─── Connection Pool ────────────────────────────────────────────────────────
 
-// Lazy initialization of the pool to avoid Next.js build-time env substitution
-let _pool: Pool | null = null;
-
-function getPool(): Pool {
-  if (!_pool) {
-    // Get the database password, defaulting to empty string
-    // The pg library requires password to be a string (not undefined/null)
-    const dbPassword = process.env.QUORUM_DB_PASSWORD ?? '';
-
-    _pool = new Pool({
-      host: process.env.QUORUM_DB_HOST ?? 'quorum-postgres',
-      port: parseInt(process.env.QUORUM_DB_PORT ?? '5432', 10),
-      database: process.env.QUORUM_DB_NAME ?? 'quorum',
-      user: process.env.QUORUM_DB_USER ?? 'quorum',
-      password: dbPassword,
-      max: 10,
-    });
-  }
-  return _pool;
+// Get the database password, defaulting to empty string
+// The pg library requires password to be a string (not undefined/null)
+function getPassword(): string {
+  const pwd = process.env.QUORUM_DB_PASSWORD;
+  return pwd === undefined || pwd === null ? '' : String(pwd);
 }
 
-// Export a getter that evaluates the pool at runtime
-export const pool = new Proxy({} as Pool, {
-  get(_target, prop) {
-    return getPool()[prop as keyof Pool];
-  },
+export const pool = new Pool({
+  host: process.env.QUORUM_DB_HOST ?? 'quorum-postgres',
+  port: parseInt(process.env.QUORUM_DB_PORT ?? '5432', 10),
+  database: process.env.QUORUM_DB_NAME ?? 'quorum',
+  user: process.env.QUORUM_DB_USER ?? 'quorum',
+  password: getPassword(),
+  max: 10,
 });
 
 // ─── Table Initialization ────────────────────────────────────────────────────
