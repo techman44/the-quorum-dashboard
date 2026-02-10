@@ -4,6 +4,7 @@ Usage:
     python agents/runner.py connector
     python agents/runner.py executor --since 24h
     python agents/runner.py strategist --type weekly
+    python agents/runner.py closer --since 24h
     python agents/runner.py data_collector /path/to/file.txt
 """
 
@@ -21,6 +22,7 @@ AGENT_REGISTRY = {
     "devils_advocate": "agents.devils_advocate.DevilsAdvocateAgent",
     "opportunist": "agents.opportunist.OpportunistAgent",
     "data_collector": "agents.data_collector.DataCollectorAgent",
+    "closer": "agents.closer.CloserAgent",
 }
 
 
@@ -98,6 +100,8 @@ def main():
     elif agent_name == "devils_advocate" and args.since:
         kwargs["lookback_hours"] = _parse_since(args.since)
     elif agent_name == "opportunist" and args.since:
+        kwargs["lookback_hours"] = _parse_since(args.since)
+    elif agent_name == "closer" and args.since:
         kwargs["lookback_hours"] = _parse_since(args.since)
     elif agent_name == "strategist" and args.reflection_type:
         kwargs["reflection_type"] = args.reflection_type
