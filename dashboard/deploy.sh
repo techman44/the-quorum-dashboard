@@ -3,9 +3,9 @@
 # Deployment script for quorum-dashboard to Mac Mini
 # Run this after fixing SSH authentication
 
-MAC_MINI_USER="dean"
-MAC_MINI_HOST="192.168.20.150"
-REMOTE_DIR="/Users/dean/quorum-dashboard"  # Adjust this path as needed
+MAC_MINI_USER="root"
+MAC_MINI_HOST="192.168.20.36"
+REMOTE_DIR="/opt/quorum/standalone-dashboard"  # Adjust this path as needed
 
 echo "🚀 Starting deployment of quorum-dashboard to Mac Mini..."
 
@@ -56,7 +56,7 @@ ENDSSH
 
 if [ $? -eq 0 ]; then
   echo "✅ Deployment successful!"
-  echo "🌐 Check the application at http://192.168.20.150:3000"
+  echo "🌐 Check the application at http://$MAC_MINI_HOST:3000"
 else
   echo "❌ Deployment failed during remote commands."
   exit 1

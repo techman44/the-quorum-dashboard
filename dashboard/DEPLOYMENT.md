@@ -73,7 +73,7 @@ Successfully implemented agent analysis results display with:
      public/ \
      src/ \
      .env.local \
-     dean@192.168.20.150:/path/to/quorum-dashboard/
+     root@192.168.20.36:/path/to/quorum-dashboard/
    ```
 
 3. **On Mac Mini, restart the application:**
@@ -94,14 +94,14 @@ Successfully implemented agent analysis results display with:
      ```
    - Add it to Mac Mini's authorized_keys if needed:
      ```bash
-     ssh-copy-id -i ~/.ssh/id_ed25519 dean@192.168.20.150
+     ssh-copy-id -i ~/.ssh/id_ed25519 root@192.168.20.36
      ```
 
 2. **Deploy using git:**
    ```bash
    # If quorum-dashboard is a git repo on Mac Mini
    git push origin main  # or whatever branch you use
-   ssh dean@192.168.20.150 "cd /path/to/quorum-dashboard && git pull && npm run build && pm2 restart quorum-dashboard"
+   ssh root@192.168.20.36 "cd /path/to/quorum-dashboard && git pull && npm run build && pm2 restart quorum-dashboard"
    ```
 
 ### Option 3: Direct Deployment via SCP
@@ -111,12 +111,12 @@ Successfully implemented agent analysis results display with:
 npm run build
 
 # Copy build output
-scp -r .next dean@192.168.20.150:/path/to/quorum-dashboard/
-scp -r src dean@192.168.20.150:/path/to/quorum-dashboard/
-scp package*.json dean@192.168.20.150:/path/to/quorum-dashboard/
+scp -r .next root@192.168.20.36:/path/to/quorum-dashboard/
+scp -r src root@192.168.20.36:/path/to/quorum-dashboard/
+scp package*.json root@192.168.20.36:/path/to/quorum-dashboard/
 
 # SSH and restart
-ssh dean@192.168.20.150
+ssh root@192.168.20.36
 cd /path/to/quorum-dashboard
 npm run build
 pm2 restart quorum-dashboard
