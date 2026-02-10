@@ -7,34 +7,18 @@ export function getPool(): Pool {
     return _pool;
   }
 
-  // Read env vars using dynamic access to prevent Next.js build-time substitution
-  // Next.js cannot statically analyze when the key is constructed dynamically
-  const envKeys = ['QUORUM_DB_HOST', 'QUORUM_DB_PORT', 'QUORUM_DB_NAME', 'QUORUM_DB_USER', 'QUORUM_DB_PASSWORD'];
-  const values: Record<string, string> = {};
-
-  for (const key of envKeys) {
-    // Use dynamic access with type assertion
-    const value = process.env[key as keyof NodeJS.ProcessEnv];
-    values[key] = value === undefined || value === null ? '' : String(value);
-  }
-
-  // Apply defaults - handle empty strings from undefined env vars
-  const host = values.QUORUM_DB_HOST || 'quorum-postgres';
-  const port = parseInt(values.QUORUM_DB_PORT || '5432', 10);
-  const database = values.QUORUM_DB_NAME || 'quorum';
-  const user = values.QUORUM_DB_USER || 'quorum';
-  const password = values.QUORUM_DB_PASSWORD || '';
-
-  console.log('[db-pool] Creating pool with:', { host, port, database, user, password: `'${password}'` });
-
+  // Directly use empty string for password (local Docker connection)
+  // In production with external databases, this would use a real password
   _pool = new Pool({
-    host,
-    port,
-    database,
-    user,
-    password,
+    host: 'quorum-postgres',
+    port: 5432,
+    database: 'quorum',
+    user: 'quorum',
+    password: '', // Empty string for local Docker trust authentication
     max: 10,
   });
+
+  console.log('[db-pool] Pool created successfully');
 
   return _pool;
 }
