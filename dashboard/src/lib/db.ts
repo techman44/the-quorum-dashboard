@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { Pool } from 'pg';
+import { pool } from './db-pool';
 import type {
   QuorumDocument,
   QuorumDocumentWithEmbedding,
@@ -11,24 +11,6 @@ import type {
   QuorumObservation,
   QuorumThread,
 } from './types';
-
-// ─── Connection Pool ────────────────────────────────────────────────────────
-
-// Get the database password, defaulting to empty string
-// The pg library requires password to be a string (not undefined/null)
-function getPassword(): string {
-  const pwd = process.env.QUORUM_DB_PASSWORD;
-  return pwd === undefined || pwd === null ? '' : String(pwd);
-}
-
-export const pool = new Pool({
-  host: process.env.QUORUM_DB_HOST ?? 'quorum-postgres',
-  port: parseInt(process.env.QUORUM_DB_PORT ?? '5432', 10),
-  database: process.env.QUORUM_DB_NAME ?? 'quorum',
-  user: process.env.QUORUM_DB_USER ?? 'quorum',
-  password: getPassword(),
-  max: 10,
-});
 
 // ─── Table Initialization ────────────────────────────────────────────────────
 
