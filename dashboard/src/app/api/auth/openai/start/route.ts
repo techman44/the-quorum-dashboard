@@ -16,6 +16,15 @@ import { storeOAuthState } from '@/lib/oauth/state-store';
  * - url: The authorization URL to redirect to
  * - state: The state parameter for CSRF protection
  */
+/**
+ * GET /api/auth/openai/start
+ *
+ * Convenience endpoint that initiates OAuth flow without body params.
+ */
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));

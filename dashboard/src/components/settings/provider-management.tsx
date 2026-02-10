@@ -93,9 +93,15 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
     status: null,
     message: '',
   });
-  const [showManualOAuth, setShowManualOAuth] = useState(false);
-  const [manualAuthUrl, setManualAuthUrl] = useState('');
-  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
+  const [showDeviceAuth, setShowDeviceAuth] = useState(false);
+  const [deviceAuthCode, setDeviceAuthCode] = useState<{
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string;
+    deviceCodeId: string;
+  } | null>(null);
+  const [deviceAuthStatus, setDeviceAuthStatus] = useState<'pending' | 'complete' | 'error'>('pending');
+  const [isPollingAuth, setIsPollingAuth] = useState(false);
 
   // Handle OAuth callback status from URL
   useEffect(() => {
@@ -162,6 +168,10 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
           name: name.trim(),
           isEnabled,
         };
+
+        if (editingProvider) {
+          body.id = editingProvider.id;
+        }
 
         if (apiKey.trim()) {
           body.apiKey = apiKey.trim();
@@ -306,9 +316,113 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
   }
 
   async function handleOAuthLogin(providerId?: string) {
-    // For the public OpenAI OAuth client, we need to use the manual flow
-    // since it only accepts callbacks to 127.0.0.1:1455
-    setShowManualOAuth(true);
+    // Start the device code OAuth flow
+    setOAuthStatus({ status: null, message: '' });
+    setDeviceAuthStatus('pending');
+    setShowDeviceAuth(true);
+
+    try {
+      const response = await fetch('/api/auth/openai/device/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to start OAuth flow');
+      }
+
+      const data = await response.json();
+      setDeviceAuthCode(data);
+
+      // Start polling for completion
+      startPolling(data.deviceCodeId);
+    } catch (error) {
+      setOAuthStatus({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to start OAuth flow',
+      });
+      setShowDeviceAuth(false);
+    }
+  }
+
+  function startPolling(deviceCodeId: string) {
+    setIsPollingAuth(true);
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/auth/openai/device/poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceCodeId }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Polling failed');
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'complete') {
+          // Success! Provider created/updated
+          clearInterval(pollInterval);
+          setIsPollingAuth(false);
+          setDeviceAuthStatus('complete');
+          setOAuthStatus({
+            status: 'success',
+            message: 'Successfully connected your ChatGPT account!',
+          });
+
+          // Refresh provider list
+          if (data.provider) {
+            setProviders(prev => {
+              const existing = prev.find(p => p.id === data.provider.id);
+              if (existing) {
+                return prev.map(p => p.id === data.provider.id ? { ...p, ...data.provider } : p);
+              }
+              return [{ ...data.provider, createdAt: new Date(), updatedAt: new Date() }, ...prev];
+            });
+          }
+
+          // Close dialog after 2 seconds
+          setTimeout(() => {
+            setShowDeviceAuth(false);
+            setDeviceAuthCode(null);
+          }, 2000);
+        } else if (data.status === 'error' || data.status === 'expired') {
+          clearInterval(pollInterval);
+          setIsPollingAuth(false);
+          setDeviceAuthStatus('error');
+          setOAuthStatus({
+            status: 'error',
+            message: data.error || 'Authentication failed',
+          });
+        }
+        // If status is 'pending', keep polling
+      } catch (error) {
+        clearInterval(pollInterval);
+        setIsPollingAuth(false);
+        setDeviceAuthStatus('error');
+        setOAuthStatus({
+          status: 'error',
+          message: 'Failed to check authentication status',
+        });
+      }
+    }, 3000); // Poll every 3 seconds
+
+    // Auto-stop polling after 5 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      if (isPollingAuth) {
+        setIsPollingAuth(false);
+        setDeviceAuthStatus('error');
+        setOAuthStatus({
+          status: 'error',
+          message: 'Authentication timed out. Please try again.',
+        });
+      }
+    }, 5 * 60 * 1000);
   }
 
   function getProviderTypeInfo(type: string) {
@@ -589,89 +703,138 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
         )}
       </CardContent>
 
-      {/* Manual OAuth Dialog - for when automatic callback doesn't work */}
-      <Dialog open={showManualOAuth} onOpenChange={setShowManualOAuth}>
+      {/* Device Code OAuth Dialog */}
+      <Dialog open={showDeviceAuth} onOpenChange={(open) => {
+        if (!open) {
+          setShowDeviceAuth(false);
+          setDeviceAuthCode(null);
+          setDeviceAuthStatus('pending');
+          setIsPollingAuth(false);
+        }
+      }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Complete OpenAI OAuth</DialogTitle>
+            <DialogTitle>Connect your ChatGPT account</DialogTitle>
             <DialogDescription>
-              After authorizing in the popup, copy the redirect URL from your browser's address bar
+              Use your existing ChatGPT subscription - no API keys or separate billing
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="rounded-lg bg-muted p-4 text-sm">
-              <p className="font-medium mb-2">Instructions:</p>
-              <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                <li>Click the button below to open OpenAI authorization</li>
-                <li>Sign in with your ChatGPT account</li>
-                <li>After authorizing, you'll be redirected to a page that doesn't load</li>
-                <li>Copy the URL from your browser's address bar</li>
-                <li>Paste it below and click Submit</li>
-              </ol>
-            </div>
+            {deviceAuthCode ? (
+              // Step 2: Show the code and verification URL
+              <>
+                {deviceAuthStatus === 'pending' && (
+                  <div className="space-y-4">
+                    <div className="rounded-lg bg-primary/5 border border-primary/20 p-6 text-center">
+                      <p className="text-sm text-muted-foreground mb-3">Your one-time code:</p>
+                      <div className="text-3xl font-mono font-bold tracking-wider mb-2">
+                        {deviceAuthCode.userCode}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(deviceAuthCode.userCode);
+                        }}
+                        className="mt-2"
+                      >
+                        Copy Code
+                      </Button>
+                    </div>
 
-            <Button onClick={() => {
-              const response = fetch('/api/auth/openai/start').then(r => r.json());
-              response.then(({ url }) => window.open(url, '_blank'));
-            }} className="w-full">
-              Open OpenAI Authorization Page
-            </Button>
+                    <div className="rounded-lg bg-muted p-4 text-sm space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">1</div>
+                        <p className="font-medium">Click the button below to open OpenAI</p>
+                      </div>
+                      <div className="ml-8">
+                        <Button
+                          onClick={() => window.open(deviceAuthCode.verificationUriComplete, '_blank')}
+                          className="w-full"
+                        >
+                          Open {new URL(deviceAuthCode.verificationUri).hostname}
+                        </Button>
+                      </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="auth-url">Redirect URL (from browser after login)</Label>
-              <Input
-                id="auth-url"
-                placeholder="http://127.0.0.1:1455/auth/callback?code=..."
-                value={manualAuthUrl}
-                onChange={(e) => setManualAuthUrl(e.target.value)}
-                disabled={isSubmittingManual}
-              />
-            </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">2</div>
+                        <p className="font-medium">Sign in and enter the code above</p>
+                      </div>
 
-            {oauthStatus.status === 'error' && (
-              <p className="text-sm text-destructive">{oauthStatus.message}</p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">3</div>
+                        <p className="font-medium">Authorize the Quorum Dashboard</p>
+                      </div>
+
+                      <div className="ml-8 mt-4 flex items-center gap-2 text-muted-foreground">
+                        {isPollingAuth && (
+                          <>
+                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            <span className="text-sm">Waiting for you to complete sign in...</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-center text-muted-foreground">
+                      This code expires in 15 minutes. Keep this dialog open while you authorize.
+                    </p>
+                  </div>
+                )}
+
+                {deviceAuthStatus === 'complete' && (
+                  <div className="rounded-lg bg-green-950 border border-green-800 p-6 text-center">
+                    <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-400" />
+                    <h3 className="text-lg font-semibold text-green-200 mb-2">Successfully connected!</h3>
+                    <p className="text-sm text-green-200/80">Your ChatGPT account is now linked to the dashboard.</p>
+                  </div>
+                )}
+
+                {deviceAuthStatus === 'error' && (
+                  <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-6 text-center">
+                    <p className="text-destructive font-medium mb-2">Authentication failed</p>
+                    <p className="text-sm text-muted-foreground">{oauthStatus.message}</p>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowDeviceAuth(false);
+                        setDeviceAuthCode(null);
+                        setDeviceAuthStatus('pending');
+                      }}
+                      className="mt-4"
+                    >
+                      Try Again
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              // Step 1: Loading state
+              <div className="text-center py-8">
+                <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+                <p className="text-sm text-muted-foreground">Initializing...</p>
+              </div>
+            )}
+
+            {oauthStatus.status === 'error' && deviceAuthStatus === 'pending' && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3">
+                <p className="text-sm text-destructive">{oauthStatus.message}</p>
+              </div>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowManualOAuth(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeviceAuth(false);
+                setDeviceAuthCode(null);
+                setDeviceAuthStatus('pending');
+                setIsPollingAuth(false);
+              }}
+            >
               Cancel
-            </Button>
-            <Button onClick={async () => {
-              if (!manualAuthUrl.trim()) return;
-              setIsSubmittingManual(true);
-
-              try {
-                const response = await fetch('/api/auth/openai/callback', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ redirectUrl: manualAuthUrl }),
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                  setShowManualOAuth(false);
-                  setManualAuthUrl('');
-                  // Refresh providers
-                  window.location.reload();
-                } else {
-                  setOAuthStatus({
-                    status: 'error',
-                    message: result.error || 'Failed to complete OAuth',
-                  });
-                }
-              } catch (error) {
-                setOAuthStatus({
-                  status: 'error',
-                  message: error instanceof Error ? error.message : 'Failed to complete OAuth',
-                });
-              } finally {
-                setIsSubmittingManual(false);
-              }
-            }} disabled={isSubmittingManual || !manualAuthUrl.trim()}>
-              {isSubmittingManual ? 'Submitting...' : 'Submit'}
             </Button>
           </DialogFooter>
         </DialogContent>
