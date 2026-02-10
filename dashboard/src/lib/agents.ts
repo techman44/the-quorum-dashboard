@@ -6,6 +6,7 @@ export const AGENTS = [
   { name: 'opportunist', displayName: 'The Opportunist', color: '#10B981', schedule: '0 */6 * * *', description: 'Finds quick wins and hidden value' },
   { name: 'data-collector', displayName: 'The Data Collector', color: '#6366F1', schedule: '*/30 * * * *', description: 'Scans inbox, processes files, verifies system health' },
   { name: 'closer', displayName: 'The Closer', color: '#F97316', schedule: '*/10 * * * *', description: 'Verifies completion, closes tasks, updates status from evidence' },
+  { name: 'quorum', displayName: 'The Quorum', color: '#0EA5E9', schedule: '', description: 'Council mode - all agents collaborate on your query' },
 ] as const;
 
 export type AgentName = typeof AGENTS[number]['name'];

@@ -28,9 +28,10 @@ async function runAgent(agentName: string): Promise<string> {
     throw new Error(`Unknown agent: ${agentName}`);
   }
 
-  const prompt = AGENT_RUN_PROMPTS[agentName] || `Run as ${agent.name}`;
+  const systemPrompt = AGENT_RUN_PROMPTS[agentName] || `Run as ${agent.name}`;
   const messages: ChatMessage[] = [
-    { role: 'system', content: prompt }
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: 'Run your analysis now. Search the database and other data sources, then report your findings.' }
   ];
 
   return generateAgentChat(agentName, messages);
