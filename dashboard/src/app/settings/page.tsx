@@ -23,6 +23,7 @@ import { AgentModelAssignment } from '@/components/settings/agent-model-assignme
 import { EmbeddingProvider } from '@/components/settings/embedding-provider';
 import { ObsidianSettings } from '@/components/settings/obsidian-settings';
 import { SkillsManagement } from '@/components/settings/skills-management';
+import { GogSettings } from '@/components/settings/gog-settings';
 import type { AgentModelAssignment as AgentModelAssignmentType } from '@/lib/types';
 import { discoverSkills } from '@/lib/skills-discovery';
 import type { AgentMetadata } from '@/lib/agent-schema';
@@ -292,9 +293,10 @@ export default async function SettingsPage() {
       {/* Section 7: Skills Management */}
       <SkillsManagement initialSkills={skills} />
 
-      {/* Section 8: Database Configuration */}
+      {/* Section 8: GOG - Google Workspace Integration */}
+      <GogSettings />
 
-      {/* Section 5: Database Configuration */}
+      {/* Section 9: Database Configuration */}
       <Card>
         <CardHeader>
           <CardTitle>Database</CardTitle>

@@ -302,6 +302,110 @@ export const DEFAULT_SKILLS: SkillMetadata[] = [
     agentAccess: ['executor', 'strategist', 'connector'],
     tags: ['calendar', 'google', 'scheduling', 'productivity'],
   },
+  {
+    id: 'gog',
+    name: 'GOG - Google Workspace CLI',
+    version: '1.0.0',
+    description: 'Google Workspace integration via gogcli (Gmail, Calendar, Drive, Contacts, Sheets, Docs)',
+    icon: 'zap',
+    category: 'integration',
+    enabled: false,
+    capabilities: [
+      // Gmail
+      'gmail_search',
+      'gmail_messages_search',
+      'gmail_send',
+      'gmail_drafts_create',
+      'gmail_drafts_send',
+      // Calendar
+      'calendar_events_list',
+      'calendar_events_create',
+      'calendar_events_update',
+      'calendar_colors',
+      // Drive
+      'drive_search',
+      // Contacts
+      'contacts_list',
+      // Sheets
+      'sheets_get',
+      'sheets_update',
+      'sheets_append',
+      'sheets_clear',
+      'sheets_metadata',
+      // Docs
+      'docs_export',
+      'docs_cat',
+    ],
+    settings: [
+      {
+        key: 'credentialsPath',
+        label: 'Credentials Path',
+        type: 'path',
+        description: 'Path to client_secret.json file from Google Cloud Console',
+        placeholder: '/path/to/client_secret.json',
+        required: true,
+      },
+      {
+        key: 'configDir',
+        label: 'GOG Config Directory',
+        type: 'path',
+        description: 'Directory where gog stores OAuth tokens (default: ~/.config/gog)',
+        placeholder: '~/.config/gog',
+        defaultValue: '~/.config/gog',
+      },
+      {
+        key: 'accounts',
+        label: 'Google Accounts',
+        type: 'text',
+        description: 'Comma-separated list of Google account emails',
+        placeholder: 'you@gmail.com,work@company.com',
+      },
+      {
+        key: 'defaultAccount',
+        label: 'Default Account',
+        type: 'text',
+        description: 'Default Google account to use for operations',
+        placeholder: 'you@gmail.com',
+      },
+      {
+        key: 'enabledServices',
+        label: 'Enabled Services',
+        type: 'text',
+        description: 'Comma-separated list of services (gmail,calendar,drive,contacts,docs,sheets)',
+        defaultValue: 'gmail,calendar,drive,contacts,docs,sheets',
+      },
+    ],
+    requiredTools: ['gog'],
+    agentAccess: [], // Available to all agents
+    tags: ['google', 'workspace', 'gmail', 'calendar', 'drive', 'sheets', 'docs', 'contacts', 'gogcli'],
+  },
+  {
+    id: 'google-drive',
+    name: 'Google Drive',
+    version: '1.0.0',
+    description: 'Search and manage Google Drive files',
+    icon: 'database',
+    category: 'storage',
+    enabled: false,
+    capabilities: [
+      'search_files',
+      'list_files',
+      'get_file_info',
+      'download_file',
+    ],
+    settings: [
+      {
+        key: 'oauthAccountId',
+        label: 'OAuth Account',
+        type: 'text',
+        description: 'Google OAuth account ID from provider settings',
+        required: true,
+      },
+    ],
+    requiredTools: ['google-oauth'],
+    agentAccess: ['connector', 'data-collector'],
+    tags: ['drive', 'google', 'storage', 'files'],
+  },
 ];
 
 /**
