@@ -22,8 +22,10 @@ import { ProviderManagement } from '@/components/settings/provider-management';
 import { AgentModelAssignment } from '@/components/settings/agent-model-assignment';
 import { EmbeddingProvider } from '@/components/settings/embedding-provider';
 import { ObsidianSettings } from '@/components/settings/obsidian-settings';
+import { SkillsManagement } from '@/components/settings/skills-management';
 import type { AgentModelAssignment as AgentModelAssignmentType } from '@/lib/types';
 import { toLegacyAgent } from '@/lib/use-agents';
+import { discoverSkills } from '@/lib/skills-discovery';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,7 +91,7 @@ async function getAgentAssignments(): Promise<AgentModelAssignmentType[]> {
 }
 
 export default async function SettingsPage() {
-  const [stats, dbConnected, ollamaConnected, agentConfigs, providers, agentAssignments, agents] =
+  const [stats, dbConnected, ollamaConnected, agentConfigs, providers, agentAssignments, agents, skills] =
     await Promise.all([
       getStats(),
       checkDbConnection(),
@@ -98,6 +100,7 @@ export default async function SettingsPage() {
       getSafeProviders(),
       getAgentAssignments(),
       discoverAgents(),
+      discoverSkills(true),
     ]);
 
   const agentMap = new Map(agents.map((a) => [a.name, toLegacyAgent(a)]));
@@ -274,7 +277,10 @@ export default async function SettingsPage() {
       {/* Section 6: Obsidian Integration */}
       <ObsidianSettings />
 
-      {/* Section 7: Database Configuration */}
+      {/* Section 7: Skills Management */}
+      <SkillsManagement initialSkills={skills} />
+
+      {/* Section 8: Database Configuration */}
 
       {/* Section 5: Database Configuration */}
       <Card>

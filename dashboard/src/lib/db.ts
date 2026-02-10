@@ -1396,3 +1396,157 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   );
   return (result.rowCount ?? 0) > 0;
 }
+
+// ─── Skills Management ────────────────────────────────────────────────────────
+
+let skillsTableInitialized = false;
+
+export interface SkillConfig {
+  id: string;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  agentAccess: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export async function ensureSkillsTable(): Promise<void> {
+  if (skillsTableInitialized) return;
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quorum_skills (
+        id TEXT PRIMARY KEY,
+        enabled BOOLEAN DEFAULT true,
+        settings JSONB NOT NULL DEFAULT '{}',
+        agent_access TEXT[] DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_quorum_skills_enabled
+      ON quorum_skills(enabled)
+    `);
+    skillsTableInitialized = true;
+  } catch (error) {
+    console.error('Failed to create skills table:', error);
+  }
+}
+
+export async function getSkillConfig(id: string): Promise<SkillConfig | null> {
+  await ensureSkillsTable();
+
+  const result = await pool.query<SkillConfig>(
+    `SELECT
+      id,
+      enabled,
+      settings,
+      agent_access as "agentAccess",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+     FROM quorum_skills WHERE id = $1`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function listSkillConfigs(): Promise<SkillConfig[]> {
+  await ensureSkillsTable();
+
+  const result = await pool.query<SkillConfig>(
+    `SELECT
+      id,
+      enabled,
+      settings,
+      agent_access as "agentAccess",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+     FROM quorum_skills
+     ORDER BY id ASC`
+  );
+  return result.rows;
+}
+
+export async function upsertSkillConfig(
+  id: string,
+  data: {
+    enabled?: boolean;
+    settings?: Record<string, unknown>;
+    agentAccess?: string[];
+  }
+): Promise<SkillConfig> {
+  await ensureSkillsTable();
+
+  const existing = await getSkillConfig(id);
+
+  if (existing) {
+    const result = await pool.query<SkillConfig>(
+      `UPDATE quorum_skills
+       SET enabled = COALESCE($2, enabled),
+           settings = COALESCE($3, settings),
+           agent_access = COALESCE($4, agent_access),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING
+         id,
+         enabled,
+         settings,
+         agent_access as "agentAccess",
+         created_at as "createdAt",
+         updated_at as "updatedAt"`,
+      [
+        id,
+        data.enabled,
+        data.settings ? JSON.stringify(data.settings) : undefined,
+        data.agentAccess,
+      ]
+    );
+    return result.rows[0];
+  } else {
+    const result = await pool.query<SkillConfig>(
+      `INSERT INTO quorum_skills (id, enabled, settings, agent_access)
+       VALUES ($1, $2, $3, $4)
+       RETURNING
+         id,
+         enabled,
+         settings,
+         agent_access as "agentAccess",
+         created_at as "createdAt",
+         updated_at as "updatedAt"`,
+      [
+        id,
+        data.enabled ?? true,
+        JSON.stringify(data.settings ?? {}),
+        data.agentAccess ?? [],
+      ]
+    );
+    return result.rows[0];
+  }
+}
+
+export async function setSkillEnabled(id: string, enabled: boolean): Promise<SkillConfig> {
+  return upsertSkillConfig(id, { enabled });
+}
+
+export async function deleteSkillConfig(id: string): Promise<boolean> {
+  await ensureSkillsTable();
+
+  const result = await pool.query(
+    'DELETE FROM quorum_skills WHERE id = $1',
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function getSkillsForAgent(agentName: string): Promise<string[]> {
+  await ensureSkillsTable();
+
+  const result = await pool.query<{ id: string }>(
+    `SELECT id FROM quorum_skills
+     WHERE enabled = true
+       AND (agent_access = '{}' OR array_length(agent_access, 1) IS NULL OR $1 = ANY(agent_access))`,
+    [agentName]
+  );
+  return result.rows.map(r => r.id);
+}

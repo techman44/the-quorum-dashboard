@@ -267,3 +267,63 @@ export interface EmbeddingModel {
   providerType: EmbeddingProviderType;
   dimension: number;
 }
+
+// ─── Skills Types ─────────────────────────────────────────────────────
+
+export type SkillCategory =
+  | 'storage'
+  | 'communication'
+  | 'automation'
+  | 'integration'
+  | 'monitoring'
+  | 'productivity';
+
+export interface SkillSetting {
+  key: string;
+  label: string;
+  type: 'text' | 'password' | 'boolean' | 'number' | 'select' | 'path' | 'cron';
+  description?: string;
+  defaultValue?: unknown;
+  required?: boolean;
+  options?: SkillSettingOption[];
+  placeholder?: string;
+}
+
+export interface SkillSettingOption {
+  label: string;
+  value: string | number | boolean;
+}
+
+export interface SkillMetadata {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  icon: string;
+  category: SkillCategory;
+  enabled: boolean;
+  capabilities: string[];
+  settings: SkillSetting[];
+  requiredTools: string[];
+  agentAccess: string[];
+  tags: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SkillConfig {
+  id: string;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  agentAccess: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SkillInfo extends Omit<SkillMetadata, 'settings'> {
+  settingDefinitions: SkillSetting[];  // The setting definitions from metadata
+  configuredSettings: Record<string, unknown>;  // The actual configured values
+  isConfigured: boolean;
+  hasErrors?: boolean;
+  lastUsed?: Date;
+}
