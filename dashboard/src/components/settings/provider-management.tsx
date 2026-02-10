@@ -310,13 +310,6 @@ export function ProviderManagement({ initialProviders }: ProviderManagementProps
     // since it only accepts callbacks to 127.0.0.1:1455
     setShowManualOAuth(true);
   }
-    } catch (error) {
-      setOAuthStatus({
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Failed to start OAuth flow',
-      });
-    }
-  }
 
   function getProviderTypeInfo(type: string) {
     return PROVIDER_TYPES.find((t) => t.value === type) || PROVIDER_TYPES[4];
