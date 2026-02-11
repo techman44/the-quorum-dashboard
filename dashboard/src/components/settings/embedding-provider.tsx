@@ -94,41 +94,49 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [enabled, setEnabled] = useState(true);
 
-  // Discovered models state
-  const [discoveredModels, setDiscoveredModels] = useState<Record<string, EmbeddingModel[]>>({});
+  // Discovered models state - initialize with defaults
+  const [discoveredModels, setDiscoveredModels] = useState<Record<string, EmbeddingModel[]>>({
+    'ollama-default': FALLBACK_MODELS.ollama,
+    'openai-default': FALLBACK_MODELS.openai,
+  });
 
-  // Load initial config
+  // Load initial config - only once on mount
   useEffect(() => {
-    loadConfig();
-  }, []);
+    let cancelled = false;
 
-  async function loadConfig() {
-    try {
-      const response = await fetch('/api/settings/embeddings');
-      const data = await response.json();
-      if (data.config) {
-        setConfig(data.config);
-        setProviderType(data.config.providerType);
-        setModel(data.config.model);
-        setBaseUrl(data.config.baseUrl || '');
-        setEnabled(data.config.enabled !== undefined ? data.config.enabled : true);
-        if (data.config.id && !data.config.id.startsWith('default')) {
-          setSelectedProviderId(data.config.id);
+    async function loadConfig() {
+      try {
+        const response = await fetch('/api/settings/embeddings');
+        const data = await response.json();
+        if (cancelled) return;
+
+        if (data.config) {
+          setConfig(data.config);
+          const configProviderType = data.config.providerType;
+          const configBaseUrl = data.config.baseUrl || '';
+          setProviderType(configProviderType);
+          setModel(data.config.model);
+          setBaseUrl(configBaseUrl);
+          setEnabled(data.config.enabled !== undefined ? data.config.enabled : true);
+          if (data.config.id && !data.config.id.startsWith('default')) {
+            setSelectedProviderId(data.config.id);
+          }
+          // Pre-populate with static models
+          const cacheKey = `${configProviderType}-${configBaseUrl || 'default'}`;
+          setDiscoveredModels(prev => ({
+            ...prev,
+            [cacheKey]: FALLBACK_MODELS[configProviderType] || [],
+          }));
         }
-        // NOTE: Don't auto-discover on load - use static fallback models instead
-        // User can click "Refresh" to discover models manually
-        const providerType = data.config.providerType;
-        const baseUrl = data.config.baseUrl;
-        const cacheKey = `${providerType}-${baseUrl || 'default'}`;
-        setDiscoveredModels(prev => ({
-          ...prev,
-          [cacheKey]: FALLBACK_MODELS[providerType] || [],
-        }));
+      } catch (error) {
+        console.error('Failed to load embedding config:', error);
       }
-    } catch (error) {
-      console.error('Failed to load embedding config:', error);
     }
-  }
+
+    loadConfig();
+
+    return () => { cancelled = true; };
+  }, []); // Empty deps - only run once
 
   /**
    * Discover available models for a provider type
@@ -137,12 +145,6 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
     // For OpenAI, use static models (no discovery needed)
     if (type === 'openai') {
       setDiscoveredModels(prev => ({ ...prev, openai: FALLBACK_MODELS.openai }));
-      return;
-    }
-
-    // Check if we already discovered models for this provider with this URL
-    const cacheKey = `${type}-${url || 'default'}`;
-    if (discoveredModels[cacheKey]) {
       return;
     }
 
@@ -159,6 +161,7 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
       const response = await fetch(`/api/settings/embeddings?${searchParams.toString()}`);
       const data = await response.json();
 
+      const cacheKey = `${type}-${url || 'default'}`;
       if (data.models && data.models.length > 0) {
         setDiscoveredModels(prev => ({ ...prev, [cacheKey]: data.models }));
       } else {
@@ -168,41 +171,12 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
     } catch (error) {
       console.error('Failed to discover models:', error);
       // Use fallback models on error
+      const cacheKey = `${type}-${url || 'default'}`;
       setDiscoveredModels(prev => ({ ...prev, [cacheKey]: FALLBACK_MODELS[type] || [] }));
     } finally {
       setIsDiscovering(false);
     }
   }
-
-  // Set default base URLs when provider type changes (use ref to prevent loops)
-  useEffect(() => {
-    if (providerType === 'ollama' && baseUrl !== 'http://localhost:11434') {
-      setBaseUrl('http://localhost:11434');
-    } else if (providerType === 'openai' && baseUrl !== 'https://api.openai.com/v1') {
-      setBaseUrl('https://api.openai.com/v1');
-    }
-  }, [providerType]);
-
-  // Pre-populate with static models when provider type or baseUrl changes
-  useEffect(() => {
-    const cacheKey = `${providerType}-${baseUrl || 'default'}`;
-    const models = FALLBACK_MODELS[providerType] || [];
-
-    if (models.length > 0 && !discoveredModels[cacheKey]) {
-      setDiscoveredModels(prev => ({ ...prev, [cacheKey]: models }));
-    }
-
-    // Update model if not set or not in the current list
-    if (!model || !models.find(m => m.name === model)) {
-      if (models.length > 0) {
-        setModel(models[0].name);
-      }
-    }
-    // NOTE: No auto-discovery - user clicks "Refresh" button to discover models
-  }, [providerType, baseUrl]);
-
-  // NOTE: Removed auto-discovery on baseUrl change to prevent SSR crashes
-  // User can manually click "Refresh" to discover models
 
   function getProviderTypeInfo(type: string) {
     return PROVIDER_TYPES.find((t) => t.value === type) || PROVIDER_TYPES[3];
@@ -246,7 +220,7 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
         setConfig(result.config);
         setSaveStatus('success');
         setTimeout(() => setSaveStatus('idle'), 3000);
-      } catch (error) {
+      } catch {
         setSaveStatus('error');
         setTimeout(() => setSaveStatus('idle'), 3000);
       }
@@ -290,7 +264,7 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
         setTestStatus('error');
         setTestMessage(result.error || 'Test failed');
       }
-    } catch (error) {
+    } catch {
       setTestStatus('error');
       setTestMessage('Connection test failed');
     }
@@ -358,7 +332,25 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
           <Label htmlFor="embedding-provider-type">Provider Type</Label>
           <Select
             value={providerType}
-            onValueChange={(value) => setProviderType(value as typeof providerType)}
+            onValueChange={(value) => {
+              setProviderType(value as typeof providerType);
+              // Set default base URL for the provider type
+              if (value === 'ollama') {
+                setBaseUrl('http://localhost:11434');
+              } else if (value === 'openai') {
+                setBaseUrl('https://api.openai.com/v1');
+              } else {
+                setBaseUrl('');
+              }
+              // Update available models
+              const newCacheKey = `${value}-default`;
+              if (!discoveredModels[newCacheKey]) {
+                setDiscoveredModels(prev => ({
+                  ...prev,
+                  [newCacheKey]: FALLBACK_MODELS[value] || [],
+                }));
+              }
+            }}
           >
             <SelectTrigger id="embedding-provider-type">
               <SelectValue />
