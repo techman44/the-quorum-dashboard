@@ -115,10 +115,15 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
         if (data.config.id && !data.config.id.startsWith('default')) {
           setSelectedProviderId(data.config.id);
         }
-        // Discover models for the current provider type
-        if (data.config.providerType) {
-          await discoverModelsForProvider(data.config.providerType, data.config.baseUrl);
-        }
+        // NOTE: Don't auto-discover on load - use static fallback models instead
+        // User can click "Refresh" to discover models manually
+        const providerType = data.config.providerType;
+        const baseUrl = data.config.baseUrl;
+        const cacheKey = `${providerType}-${baseUrl || 'default'}`;
+        setDiscoveredModels(prev => ({
+          ...prev,
+          [cacheKey]: FALLBACK_MODELS[providerType] || [],
+        }));
       }
     } catch (error) {
       console.error('Failed to load embedding config:', error);
@@ -170,22 +175,17 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
   }
 
   useEffect(() => {
-    // Discover models when provider type or base URL changes
+    // Pre-populate with static models when provider type or base URL changes
     const cacheKey = `${providerType}-${baseUrl || 'default'}`;
 
     // Only update model if we haven't already set one for this provider
-    const currentCacheKey = `${providerType}-${baseUrl || 'default'}`;
-    const models = discoveredModels[currentCacheKey] || FALLBACK_MODELS[providerType] || [];
+    const models = FALLBACK_MODELS[providerType] || [];
 
-    if (models.length > 0 && !models.find(m => m.name === model)) {
-      setModel(models[0].name);
-    }
-
-    // Trigger discovery for this provider
-    if (providerType !== 'openai') {
-      discoverModelsForProvider(providerType, baseUrl);
-    } else {
-      setDiscoveredModels(prev => ({ ...prev, ['openai-default']: FALLBACK_MODELS.openai }));
+    if (models.length > 0 && !discoveredModels[cacheKey]) {
+      setDiscoveredModels(prev => ({ ...prev, [cacheKey]: models }));
+      if (!model || !models.find(m => m.name === model)) {
+        setModel(models[0].name);
+      }
     }
 
     // Update baseUrl based on provider type
@@ -194,14 +194,11 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
     } else if (providerType === 'openai') {
       setBaseUrl('https://api.openai.com/v1');
     }
+    // NOTE: No auto-discovery - user clicks "Refresh" button to discover models
   }, [providerType, baseUrl]);
 
-  // Trigger discovery when baseUrl changes for ollama/custom providers
-  useEffect(() => {
-    if ((providerType === 'ollama' || providerType === 'custom' || providerType === 'openrouter') && baseUrl) {
-      discoverModelsForProvider(providerType, baseUrl);
-    }
-  }, [baseUrl]);
+  // NOTE: Removed auto-discovery on baseUrl change to prevent SSR crashes
+  // User can manually click "Refresh" to discover models
 
   function getProviderTypeInfo(type: string) {
     return PROVIDER_TYPES.find((t) => t.value === type) || PROVIDER_TYPES[3];

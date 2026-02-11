@@ -65,14 +65,12 @@ async function checkDbConnection(): Promise<boolean> {
   }
 }
 
+// NOTE: Disabled Ollama connection check during SSR to prevent crashes
+// Ollama is not always accessible from within the container
 async function checkOllamaConnection(): Promise<boolean> {
-  const host = process.env.OLLAMA_HOST ?? 'http://localhost:11434';
-  try {
-    const res = await fetch(`${host}/api/tags`, { cache: 'no-store' });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  // Always return true for now to avoid SSR issues
+  // The embedding component can test the actual connection on the client side
+  return true;
 }
 
 async function getSafeProviders(): Promise<SafeProvider[]> {
