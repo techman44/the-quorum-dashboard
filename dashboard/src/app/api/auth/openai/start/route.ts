@@ -30,21 +30,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { providerId, redirectUri: customRedirectUri } = body as { providerId?: string; redirectUri?: string };
 
-    // Check if OAuth is configured
-    const clientId = process.env.OPENAI_OAUTH_CLIENT_ID;
-    if (!clientId) {
-      return NextResponse.json(
-        {
-          error: 'OAuth not configured',
-          details: 'OpenAI OAuth requires OPENAI_OAUTH_CLIENT_ID and optionally OPENAI_OAUTH_CLIENT_SECRET environment variables. Create an OAuth app at https://platform.openai.com/docs/quickstart',
-        },
-        { status: 501 }
-      );
-    }
-
     // Build the redirect URI
     // Use custom redirect if provided, otherwise use localhost callback
-    const redirectUri = customRedirectUri || 'http://127.0.0.1:1455/auth/callback';
+    const redirectUri = customRedirectUri || 'http://localhost:1455/auth/callback';
 
     // Create the authorization flow
     const { url: authUrl, state, codeVerifier } = await createAuthorizationFlow(

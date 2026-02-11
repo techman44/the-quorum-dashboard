@@ -11,14 +11,14 @@
  */
 
 // OpenAI OAuth configuration
-// To use OAuth, you need to create your own OAuth app at: https://platform.openai.com/docs/quickstart
+// Using the same public client as OpenClaw (Codex CLI)
 const OPENAI_OAUTH_CONFIG = {
-  // Use environment variable for custom OAuth app, or the Codex CLI client as fallback
-  clientId: process.env.OPENAI_OAUTH_CLIENT_ID || '',
+  clientId: process.env.OPENAI_OAUTH_CLIENT_ID || 'app_EMoamEEZ73f0CkXaXp7hrann',
   clientSecret: process.env.OPENAI_OAUTH_CLIENT_SECRET || '',
   authorizationUrl: 'https://auth.openai.com/oauth/authorize',
   tokenUrl: 'https://auth.openai.com/oauth/token',
-  scope: 'openid profile email offline_access',
+  // Include API scopes for model discovery and chat completions
+  scope: 'openid profile email offline_access api.model.read api.model.request',
   // Redirect will be set dynamically based on the request
 };
 
@@ -79,7 +79,7 @@ export async function createAuthorizationFlow(
     state: authState,
     id_token_add_organizations: 'true',
     codex_cli_simplified_flow: 'true',
-    originator: 'quorum-dashboard',
+    originator: 'pi',
   });
 
   const url = `${OPENAI_OAUTH_CONFIG.authorizationUrl}?${params.toString()}`;

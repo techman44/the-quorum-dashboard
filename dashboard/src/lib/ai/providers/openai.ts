@@ -239,6 +239,42 @@ export class OpenAIProvider {
   }
 
   /**
+   * Get available models from OpenAI API
+   */
+  async getAvailableModels(): Promise<string[]> {
+    try {
+      const token = await this.getValidToken();
+
+      const response = await fetch(
+        `${this.provider.baseUrl || 'https://api.openai.com/v1'}/models`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        console.error('Failed to fetch models:', response.status);
+        return []; // Return empty on error, fall back to defaults
+      }
+
+      const data = await response.json();
+
+      // Filter for chat models and extract model IDs
+      const models = data.data
+        .filter((m: any) => m.id.includes('gpt') || m.id.includes('o1') || m.id.includes('chatgpt'))
+        .map((m: any) => m.id)
+        .sort((a: string, b: string) => a.localeCompare(b));
+
+      return models;
+    } catch (error) {
+      console.error('Error fetching models:', error);
+      return [];
+    }
+  }
+
+  /**
    * Test the connection
    */
   async test(): Promise<boolean> {

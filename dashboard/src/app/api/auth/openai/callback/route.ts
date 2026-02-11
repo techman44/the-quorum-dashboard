@@ -3,6 +3,7 @@ import { exchangeAuthorizationCode, extractMetadataFromIdToken, calculateExpirat
 import { consumeOAuthState } from '@/lib/oauth/state-store';
 import { createAIProvider, updateAIProvider, listAIProviders } from '@/lib/db';
 import { encryptApiKey } from '@/lib/ai/encryption';
+import { pool } from '@/lib/db-pool';
 
 /**
  * POST /api/auth/openai/callback
@@ -93,29 +94,51 @@ export async function POST(request: NextRequest) {
       ? `OpenAI (${accountId})`
       : `OpenAI OAuth (${new Date().toLocaleDateString()})`;
 
-    const result = await pool.query(
-      `INSERT INTO quorum_ai_providers
-       (provider_type, name, is_enabled, oauth_token, oauth_refresh_token, oauth_expires_at, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (provider_type) DO UPDATE SET
-         oauth_token = EXCLUDED.oauth_token,
-         oauth_refresh_token = EXCLUDED.oauth_refresh_token,
-         oauth_expires_at = EXCLUDED.oauth_expires_at,
-         metadata = EXCLUDED.metadata,
-         updated_at = NOW()
-       RETURNING id, name`,
-      [
-        'openai',
-        providerName,
-        true,
-        tokenResult.accessToken,
-        tokenResult.refreshToken,
-        expiresAt,
-        JSON.stringify(metadata),
-      ]
+    // Check if an OpenAI provider already exists
+    const existing = await pool.query(
+      'SELECT id FROM quorum_ai_providers WHERE provider_type = $1',
+      ['openai']
     );
 
-    const newProvider = result.rows[0];
+    let newProvider;
+
+    if (existing.rows.length > 0) {
+      // Update existing provider
+      const updateResult = await pool.query(
+        `UPDATE quorum_ai_providers
+         SET oauth_token = $1, oauth_refresh_token = $2, oauth_expires_at = $3,
+             metadata = $4, name = $5, updated_at = NOW()
+         WHERE provider_type = $6
+         RETURNING id, name`,
+        [
+          tokenResult.accessToken,
+          tokenResult.refreshToken,
+          expiresAt,
+          JSON.stringify(metadata),
+          providerName,
+          'openai',
+        ]
+      );
+      newProvider = updateResult.rows[0];
+    } else {
+      // Insert new provider
+      const result = await pool.query(
+        `INSERT INTO quorum_ai_providers
+         (provider_type, name, is_enabled, oauth_token, oauth_refresh_token, oauth_expires_at, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, name`,
+        [
+          'openai',
+          providerName,
+          true,
+          tokenResult.accessToken,
+          tokenResult.refreshToken,
+          expiresAt,
+          JSON.stringify(metadata),
+        ]
+      );
+      newProvider = result.rows[0];
+    }
 
     return NextResponse.json({
       success: true,
@@ -324,6 +347,3 @@ function redirectToSettings(status: 'success' | 'error', message: string): NextR
 
   return NextResponse.redirect(url);
 }
-
-// Import pool for direct database access
-import { pool } from '@/lib/db-pool';

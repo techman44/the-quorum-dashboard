@@ -23,7 +23,8 @@ interface TokenRefreshResult {
 export async function ensureValidToken(providerId: string): Promise<boolean> {
   const provider = await getAIProvider(providerId);
 
-  if (!provider?.oauthRefreshToken) {
+  if (!provider?.oauthToken) {
+    console.error(`[ensureValidToken] No OAuth token found for provider ${providerId}`);
     return false;
   }
 
@@ -32,11 +33,19 @@ export async function ensureValidToken(providerId: string): Promise<boolean> {
   const isExpired = !expiresAt || new Date(expiresAt) < new Date(Date.now() + 5 * 60 * 1000);
 
   if (!isExpired) {
-    return true; // Token is still valid
+    // Token is still valid, no refresh needed
+    return true;
+  }
+
+  // Token is expired - check if we can refresh
+  if (!provider.oauthRefreshToken) {
+    console.error(`[ensureValidToken] Token is expired but no refresh token available for provider ${providerId}`);
+    return false;
   }
 
   // Token needs refresh
   try {
+    console.log(`[ensureValidToken] Refreshing expired token for provider ${providerId}`);
     const newTokens = await refreshAccessToken(provider.oauthRefreshToken);
     const expiresAt = calculateExpirationDate(newTokens.expiresIn);
 
@@ -46,6 +55,7 @@ export async function ensureValidToken(providerId: string): Promise<boolean> {
       expiresAt,
     });
 
+    console.log(`[ensureValidToken] Successfully refreshed token for provider ${providerId}`);
     return true;
   } catch (error) {
     console.error(`Failed to refresh token for provider ${providerId}:`, error);
@@ -105,17 +115,27 @@ export async function getAccessToken(providerId: string): Promise<string | null>
   const provider = await getAIProvider(providerId);
 
   if (!provider?.oauthToken) {
+    console.error(`[getAccessToken] No OAuth token found for provider ${providerId}`);
     return null;
   }
 
-  // Ensure token is valid
+  console.log(`[getAccessToken] Found OAuth token for provider ${providerId}, expires at: ${provider.oauthExpiresAt}`);
+
+  // Ensure token is valid (will refresh if needed)
   const isValid = await ensureValidToken(providerId);
 
   if (!isValid) {
+    console.error(`[getAccessToken] Unable to get valid token for provider ${providerId}`);
     return null;
   }
 
-  // Get fresh provider data
+  // Get fresh provider data to retrieve the potentially refreshed token
   const freshProvider = await getAIProvider(providerId);
-  return freshProvider?.oauthToken || null;
+  const token = freshProvider?.oauthToken || null;
+
+  if (token) {
+    console.log(`[getAccessToken] Successfully retrieved valid token for provider ${providerId}`);
+  }
+
+  return token;
 }

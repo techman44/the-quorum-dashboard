@@ -1,12 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAIProvider, getAIProvider, listAIProviders, updateAIProvider, deleteAIProvider } from '@/lib/db';
 import { encryptApiKey, decryptApiKey } from '@/lib/ai/encryption';
+import { getAccessToken } from '@/lib/oauth/token-manager';
 
-// Fallback models for providers that don't support discovery
+// Model lists aligned with OpenClaw's available models
+// OAuth tokens cannot access /models endpoint due to scope limitations,
+// so we maintain a curated static list of current, usable models
 const FALLBACK_MODELS: Record<string, string[]> = {
-  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
-  anthropic: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-20250514'],
-  google: ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+  // OpenAI models - curated list of current models (as of February 2025)
+  openai: [
+    // GPT-5 series (Kodak models - latest)
+    'gpt-5.1',
+    'gpt-5.1-codex-max',
+    'gpt-5.1-mini',
+    'gpt-5.1-nano',
+    'gpt-5.2',
+    'gpt-5.2-mini',
+    'gpt-5.2-nano',
+    'gpt-5',
+    // GPT-4.1 series
+    'gpt-4.1',
+    'gpt-4.1-mini',
+    'gpt-4.1-nano',
+    // GPT-4o series
+    'gpt-4o',
+    'gpt-4o-mini',
+    // O1 series (reasoning models)
+    'o1',
+    'o1-mini',
+    // O3 series (reasoning models)
+    'o3',
+    'o3-mini',
+    'o3-mini-high',
+  ],
+  // Anthropic Claude models
+  anthropic: [
+    'claude-opus-4-5',
+    'claude-sonnet-4-5',
+    'claude-haiku-4-5',
+    'claude-3-7-sonnet',
+    'claude-3-5-sonnet',
+    'claude-3-5-haiku',
+    'claude-3-opus',
+  ],
+  // Google Gemini models
+  google: [
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-thinking-exp',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+  ],
   openrouter: [], // Discovery only
   custom: [], // Discovery only
 };
@@ -16,13 +60,98 @@ const FALLBACK_MODELS: Record<string, string[]> = {
  */
 async function discoverModels(providerId: string): Promise<string[]> {
   const provider = await getAIProvider(providerId);
-  if (!provider) return [];
+  if (!provider) {
+    console.error(`[discoverModels] Provider not found: ${providerId}`);
+    return [];
+  }
+
+  console.log(`[discoverModels] Provider:`, {
+    id: provider.id,
+    providerType: provider.providerType,
+    hasOauthToken: !!provider.oauthToken,
+    oauthTokenLength: provider.oauthToken?.length || 0,
+    hasApiKeyEncrypted: !!provider.apiKeyEncrypted,
+    baseUrl: provider.baseUrl,
+  });
 
   const providerType = provider.providerType;
   const baseUrl = provider.baseUrl;
 
-  // For providers without model discovery APIs, return fallback
-  if (providerType === 'openai' || providerType === 'anthropic' || providerType === 'google') {
+  // OpenAI providers with OAuth or API key - use /models endpoint
+  if (providerType === 'openai') {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Use OAuth token if available (with automatic refresh), otherwise try API key
+      let accessToken: string | null = null;
+      if (provider.oauthToken) {
+        console.log(`[discoverModels] Getting valid OAuth token (with automatic refresh if needed)`);
+        accessToken = await getAccessToken(providerId);
+        if (accessToken) {
+          console.log(`[discoverModels] Using OAuth token for authentication`);
+          headers['Authorization'] = `Bearer ${accessToken}`;
+        } else {
+          console.error(`[discoverModels] Failed to get valid OAuth token (may be expired and refresh failed)`);
+        }
+      }
+
+      // Fall back to API key if OAuth is not available or failed
+      if (!accessToken && provider.apiKeyEncrypted) {
+        console.log(`[discoverModels] Using encrypted API key for authentication`);
+        try {
+          const apiKey = decryptApiKey(provider.apiKeyEncrypted);
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        } catch {
+          console.error(`[discoverModels] Failed to decrypt API key`);
+        }
+      }
+
+      // Check if we have any authentication method
+      if (!headers['Authorization']) {
+        console.error(`[discoverModels] No valid OAuth token or API key available for OpenAI provider`);
+        return FALLBACK_MODELS[providerType] || [];
+      }
+
+      const fetchUrl = `${baseUrl || 'https://api.openai.com/v1'}/models`;
+      console.log(`[discoverModels] Fetching models from: ${fetchUrl}`);
+
+      const response = await fetch(fetchUrl, {
+        method: 'GET',
+        headers,
+      });
+
+      console.log(`[discoverModels] Response status: ${response.status}, ok: ${response.ok}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`[discoverModels] Got ${data.data?.length || 0} models from OpenAI`);
+        // Filter for relevant models (gpt, o1, o3, chatgpt, codex)
+        const models = data.data
+          .filter((m: any) => m.id.includes('gpt') || m.id.includes('o1') || m.id.includes('o3') || m.id.includes('chatgpt') || m.id.includes('codex'))
+          .map((m: any) => m.id)
+          .sort((a: string, b: string) => a.localeCompare(b));
+        console.log(`[discoverModels] Filtered to ${models.length} GPT models`);
+        return models;
+      } else {
+        const errorText = await response.text();
+        console.error(`[discoverModels] OpenAI API error: ${response.status} - ${errorText}`);
+        // Check for specific error: missing api.model.read scope
+        if (errorText.includes('api.model.read')) {
+          console.warn(`[discoverModels] OAuth token missing api.model.read scope. User needs to re-authenticate with updated scopes.`);
+        }
+      }
+    } catch (error) {
+      console.error(`[discoverModels] OpenAI model discovery error:`, error);
+    }
+    // Fall back to defaults on error
+    console.log(`[discoverModels] Falling back to default models`);
+    return FALLBACK_MODELS[providerType] || [];
+  }
+
+  // Anthropic, Google - use fallback for now (they have different APIs)
+  if (providerType === 'anthropic' || providerType === 'google') {
     return FALLBACK_MODELS[providerType] || [];
   }
 
@@ -90,8 +219,8 @@ export async function GET(request: NextRequest) {
       name: p.name,
       isEnabled: p.is_enabled !== undefined ? p.is_enabled : p.isEnabled,
       baseUrl: p.base_url || p.baseUrl,
-      hasApiKey: !!p.api_key_encrypted || !!p.oauth_token,
-      hasOAuth: !!p.oauth_token,
+      hasApiKey: !!(p.api_key_encrypted || p.apiKeyEncrypted) || !!(p.oauth_token || p.oauthToken),
+      hasOAuth: !!(p.oauth_token || p.oauthToken),
       metadata: p.metadata || {},
       createdAt: p.created_at || p.createdAt,
       updatedAt: p.updated_at || p.updatedAt,

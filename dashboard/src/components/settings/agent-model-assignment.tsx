@@ -21,14 +21,6 @@ import { Badge } from '@/components/ui/badge';
 import { useAgents, type UIAgent } from '@/lib/use-agents';
 import { DynamicIcon } from '@/components/dynamic-icon';
 
-// Local state type for unsaved assignments
-interface LocalAssignment {
-  primaryProviderId: string;
-  primaryModel: string;
-  fallbackProviderId: string;
-  fallbackModel: string;
-}
-
 interface Provider {
   id: string;
   providerType: 'openai' | 'anthropic' | 'google' | 'openrouter' | 'custom';
@@ -51,11 +43,44 @@ interface AgentModelAssignmentProps {
   assignments: AgentModelAssignment[];
 }
 
-// Fallback models for providers that don't support discovery
+// Model lists aligned with OpenClaw's available models
 const FALLBACK_MODELS: Record<string, string[]> = {
-  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
-  anthropic: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-20250514'],
-  google: ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+  openai: [
+    'gpt-5.1',
+    'gpt-5.1-codex-max',
+    'gpt-5.1-mini',
+    'gpt-5.1-nano',
+    'gpt-5.2',
+    'gpt-5.2-mini',
+    'gpt-5.2-nano',
+    'gpt-5',
+    'gpt-4.1',
+    'gpt-4.1-mini',
+    'gpt-4.1-nano',
+    'gpt-4o',
+    'gpt-4o-mini',
+    'o1',
+    'o1-mini',
+    'o3',
+    'o3-mini',
+    'o3-mini-high',
+  ],
+  anthropic: [
+    'claude-opus-4-5',
+    'claude-sonnet-4-5',
+    'claude-haiku-4-5',
+    'claude-3-7-sonnet',
+    'claude-3-5-sonnet',
+    'claude-3-5-haiku',
+    'claude-3-opus',
+  ],
+  google: [
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-thinking-exp',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+  ],
   openrouter: [],
   custom: [],
 };
@@ -73,20 +98,27 @@ export function AgentModelAssignment({
   assignments: initialAssignments,
 }: AgentModelAssignmentProps) {
   const { agents, loading: agentsLoading } = useAgents({ includeDisabled: false });
-  const [assignments, setAssignments] = useState<AgentModelAssignment[]>(
-    initialAssignments
-  );
-  // Local state for unsaved selections - allows provider selection before saving
-  const [localAssignments, setLocalAssignments] = useState<Record<string, LocalAssignment>>({});
+
+  // Store assignments in state, synced with props
+  const [assignments, setAssignments] = useState<AgentModelAssignment[]>(initialAssignments);
+
+  // Sync assignments when props change
+  useEffect(() => {
+    setAssignments(initialAssignments);
+  }, [initialAssignments]);
+
   const [isPending, startTransition] = useTransition();
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+
+  // "Apply to all" selections
+  const [applyToAllPrimary, setApplyToAllPrimary] = useState<{ providerId: string; model: string } | null>(null);
+  const [applyToAllFallback, setApplyToAllFallback] = useState<{ providerId: string; model: string } | null>(null);
 
   // Discovered models cache per provider
   const [discoveredModels, setDiscoveredModels] = useState<Record<string, string[]>>({});
   const [isDiscovering, setIsDiscovering] = useState<Record<string, boolean>>({});
 
   // Get enabled providers only
-  // For custom providers, API key is not required
   const enabledProviders = providers.filter((p) => p.isEnabled && (p.hasApiKey || p.providerType === 'custom'));
 
   function getProvider(providerId: string) {
@@ -98,8 +130,8 @@ export function AgentModelAssignment({
     const provider = getProvider(providerId);
     if (!provider) return;
 
-    // For providers without discovery API, use fallback
-    if (provider.providerType === 'openai' || provider.providerType === 'anthropic' || provider.providerType === 'google') {
+    // For Anthropic/Google, use fallback
+    if (provider.providerType === 'anthropic' || provider.providerType === 'google') {
       setDiscoveredModels(prev => ({
         ...prev,
         [providerId]: FALLBACK_MODELS[provider.providerType] || [],
@@ -107,8 +139,8 @@ export function AgentModelAssignment({
       return;
     }
 
-    // For custom/openrouter, fetch from API
-    if (provider.providerType === 'custom' || provider.providerType === 'openrouter') {
+    // For OpenAI, custom, openrouter - fetch from API
+    if (provider.providerType === 'openai' || provider.providerType === 'custom' || provider.providerType === 'openrouter') {
       setIsDiscovering(prev => ({ ...prev, [providerId]: true }));
       try {
         const response = await fetch(`/api/settings/providers?discover=true&providerId=${encodeURIComponent(providerId)}`);
@@ -119,7 +151,6 @@ export function AgentModelAssignment({
             [providerId]: data.models,
           }));
         } else {
-          // Use empty array if no models found
           setDiscoveredModels(prev => ({
             ...prev,
             [providerId]: [],
@@ -146,7 +177,6 @@ export function AgentModelAssignment({
     const provider = getProvider(providerId);
     if (!provider) return [];
 
-    // Return fallback models initially, will be replaced by discovery
     return FALLBACK_MODELS[provider.providerType] || [];
   }
 
@@ -161,81 +191,13 @@ export function AgentModelAssignment({
     return assignments.find((a) => a.agentName === agentName);
   }
 
-  // Get the effective value to display - prioritizes saved assignment, then local state
-  function getPrimaryProviderValue(agentName: string): string {
-    const saved = getAssignmentForAgent(agentName);
-    if (saved?.primaryProviderId) return saved.primaryProviderId;
-    return localAssignments[agentName]?.primaryProviderId || '';
-  }
-
-  function getPrimaryModelValue(agentName: string): string {
-    const saved = getAssignmentForAgent(agentName);
-    if (saved?.primaryModel) return saved.primaryModel;
-    return localAssignments[agentName]?.primaryModel || '';
-  }
-
-  function getFallbackProviderValue(agentName: string): string {
-    const saved = getAssignmentForAgent(agentName);
-    if (saved?.fallbackProviderId) return saved.fallbackProviderId;
-    return localAssignments[agentName]?.fallbackProviderId || 'none';
-  }
-
-  function getFallbackModelValue(agentName: string): string {
-    const saved = getAssignmentForAgent(agentName);
-    if (saved?.fallbackModel) return saved.fallbackModel;
-    return localAssignments[agentName]?.fallbackModel || '';
-  }
-
-  // Update local state immediately for responsive UI, then persist to API
-  function updateLocalAssignment(
-    agentName: string,
-    updates: Partial<LocalAssignment>
-  ) {
-    setLocalAssignments((prev) => ({
-      ...prev,
-      [agentName]: {
-        ...prev[agentName],
-        ...updates,
-      },
-    }));
-  }
-
-  async function handleUpdateAssignment(
-    agentName: string,
-    updates: Partial<AgentModelAssignment>
-  ) {
-    const currentAssignment = getAssignmentForAgent(agentName);
-
-    // Combine saved assignment with local state for the full picture
-    const localState = localAssignments[agentName] || {};
-    const baseAssignment = currentAssignment || {
-      id: '',
-      agentName,
-      primaryProviderId: '',
-      primaryModel: '',
-      fallbackProviderId: '',
-      fallbackModel: '',
-    };
-
-    const newAssignment: AgentModelAssignment = {
-      ...baseAssignment,
-      ...localState,
-      ...updates,
-    };
-
-    // Convert "none" to undefined for the API
-    const apiFallbackProviderId = newAssignment.fallbackProviderId === 'none'
-      ? undefined
-      : newAssignment.fallbackProviderId;
-    const apiFallbackModel = newAssignment.fallbackModel === 'none' || !apiFallbackProviderId
-      ? undefined
-      : newAssignment.fallbackModel;
-
-    // Only save if we have the required fields
-    if (!newAssignment.primaryProviderId || !newAssignment.primaryModel) {
-      return;
-    }
-
+  // Save assignment to API
+  async function saveAssignment(agentName: string, assignmentData: {
+    primaryProviderId: string;
+    primaryModel: string;
+    fallbackProviderId?: string;
+    fallbackModel?: string;
+  }) {
     startTransition(async () => {
       try {
         setSaveStatus('saving');
@@ -245,48 +207,77 @@ export function AgentModelAssignment({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentName,
-            primaryProviderId: newAssignment.primaryProviderId,
-            primaryModel: newAssignment.primaryModel,
-            fallbackProviderId: apiFallbackProviderId,
-            fallbackModel: apiFallbackModel,
+            ...assignmentData,
           }),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-          console.error('Failed to save assignment:', errorData);
           throw new Error(errorData.error || 'Failed to save assignment');
         }
 
         const result = await response.json();
 
-        // Update local state
-        if (currentAssignment) {
-          setAssignments(
-            assignments.map((a) =>
-              a.agentName === agentName ? result.assignment : a
-            )
-          );
-        } else {
-          setAssignments([...assignments, result.assignment]);
-        }
-
-        // Clear local state for this agent after successful save
-        setLocalAssignments((prev) => {
-          const newState = { ...prev };
-          delete newState[agentName];
-          return newState;
+        // Update local state with the result from server
+        setAssignments(prev => {
+          const existing = prev.find(a => a.agentName === agentName);
+          if (existing) {
+            return prev.map(a => a.agentName === agentName ? result.assignment : a);
+          } else {
+            return [...prev, result.assignment];
+          }
         });
 
         setSaveStatus('success');
-        setTimeout(() => setSaveStatus('idle'), 3000);
+        setTimeout(() => setSaveStatus('idle'), 2000);
       } catch (error) {
         console.error('Assignment save error:', error);
         setSaveStatus('error');
-        setTimeout(() => setSaveStatus('idle'), 3000);
+        setTimeout(() => setSaveStatus('idle'), 2000);
       }
     });
   }
+
+  // Apply primary model to all agents
+  async function applyPrimaryToAll() {
+    if (!applyToAllPrimary) return;
+
+    const { providerId, model } = applyToAllPrimary;
+
+    for (const agent of agents) {
+      await saveAssignment(agent.name, {
+        primaryProviderId: providerId,
+        primaryModel: model,
+        fallbackProviderId: undefined,
+        fallbackModel: undefined,
+      });
+    }
+
+    setApplyToAllPrimary(null);
+  }
+
+  // Apply fallback model to all agents
+  async function applyFallbackToAll() {
+    if (!applyToAllFallback) return;
+
+    const { providerId, model } = applyToAllFallback;
+
+    for (const agent of agents) {
+      const current = getAssignmentForAgent(agent.name);
+      await saveAssignment(agent.name, {
+        primaryProviderId: current?.primaryProviderId || providerId,
+        primaryModel: current?.primaryModel || model,
+        fallbackProviderId: providerId,
+        fallbackModel: model,
+      });
+    }
+
+    setApplyToAllFallback(null);
+  }
+
+  // Get the first enabled provider for default selections
+  const firstEnabledProvider = enabledProviders[0];
+  const firstEnabledProviderModels = firstEnabledProvider ? getModelsForProvider(firstEnabledProvider.id) : [];
 
   return (
     <Card>
@@ -298,6 +289,9 @@ export function AgentModelAssignment({
               Configure which AI provider and model each agent uses
             </CardDescription>
           </div>
+          {saveStatus === 'saving' && (
+            <Badge className="bg-yellow-600 text-white">Saving...</Badge>
+          )}
           {saveStatus === 'success' && (
             <Badge className="bg-green-600 text-white">Saved</Badge>
           )}
@@ -309,263 +303,352 @@ export function AgentModelAssignment({
       <CardContent>
         {enabledProviders.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No enabled providers with API keys configured. Add and enable a provider
-            first.
+            No enabled providers with API keys configured. Add and enable a provider first.
           </div>
         ) : agentsLoading ? (
-          <div className="text-center py-8 text-muted-foreground">
-            Loading agents...
-          </div>
+          <div className="text-center py-8 text-muted-foreground">Loading agents...</div>
         ) : agents.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No agents available.
-          </div>
+          <div className="text-center py-8 text-muted-foreground">No agents available.</div>
         ) : (
-          <div className="space-y-6">
-            {agents.map((agent) => {
-              const assignment = getAssignmentForAgent(agent.name);
-              const primaryProviderId = getPrimaryProviderValue(agent.name);
-              const primaryModel = getPrimaryModelValue(agent.name);
-              const fallbackProviderId = getFallbackProviderValue(agent.name);
-              const fallbackModel = getFallbackModelValue(agent.name);
+          <>
+            {/* Apply to All Section */}
+            <div className="mb-6 p-4 bg-muted/50 rounded-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium">Quick Setup - Apply to All Agents</h4>
+                  <p className="text-sm text-muted-foreground">Set a default model for all agents at once</p>
+                </div>
+              </div>
 
-              const primaryProvider = getProvider(primaryProviderId);
-              const fallbackProvider = fallbackProviderId && fallbackProviderId !== 'none'
-                ? getProvider(fallbackProviderId)
-                : null;
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* Primary for all */}
+                <div className="flex gap-2">
+                  <Select
+                    value={applyToAllPrimary?.providerId || ''}
+                    onValueChange={(value) => {
+                      const models = getModelsForProvider(value);
+                      setApplyToAllPrimary({
+                        providerId: value,
+                        model: models[0] || '',
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {enabledProviders.map((provider) => (
+                        <SelectItem key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-              return (
-                <div
-                  key={agent.name}
-                  className="border rounded-lg p-4 space-y-4"
-                >
-                  {/* Agent Header */}
-                  <div className="flex items-center gap-3">
-                    <div style={{ color: agent.color }}>
-                      <DynamicIcon name={agent.icon} className="h-5 w-5" size={20} />
+                  <Select
+                    value={applyToAllPrimary?.model || ''}
+                    onValueChange={(value) => {
+                      if (applyToAllPrimary) {
+                        setApplyToAllPrimary({ ...applyToAllPrimary, model: value });
+                      }
+                    }}
+                    disabled={!applyToAllPrimary?.providerId}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {applyToAllPrimary?.providerId && getModelsForProvider(applyToAllPrimary.providerId).map((model) => (
+                        <SelectItem key={model} value={model}>{model}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    onClick={applyPrimaryToAll}
+                    disabled={!applyToAllPrimary?.providerId || !applyToAllPrimary?.model || isPending}
+                    size="sm"
+                  >
+                    Set Primary
+                  </Button>
+                </div>
+
+                {/* Fallback for all */}
+                <div className="flex gap-2">
+                  <Select
+                    value={applyToAllFallback?.providerId || ''}
+                    onValueChange={(value) => {
+                      const models = getModelsForProvider(value);
+                      setApplyToAllFallback({
+                        providerId: value,
+                        model: models[0] || '',
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {enabledProviders.map((provider) => (
+                        <SelectItem key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={applyToAllFallback?.model || ''}
+                    onValueChange={(value) => {
+                      if (applyToAllFallback) {
+                        setApplyToAllFallback({ ...applyToAllFallback, model: value });
+                      }
+                    }}
+                    disabled={!applyToAllFallback?.providerId}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {applyToAllFallback?.providerId && getModelsForProvider(applyToAllFallback.providerId).map((model) => (
+                        <SelectItem key={model} value={model}>{model}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    onClick={applyFallbackToAll}
+                    disabled={!applyToAllFallback?.providerId || !applyToAllFallback?.model || isPending}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Set Fallback
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Individual Agent Configurations */}
+            <div className="space-y-4">
+              {agents.map((agent) => {
+                const assignment = getAssignmentForAgent(agent.name);
+                const primaryProviderId = assignment?.primaryProviderId || '';
+                const primaryModel = assignment?.primaryModel || '';
+                const fallbackProviderId = assignment?.fallbackProviderId || 'none';
+                const fallbackModel = assignment?.fallbackModel || '';
+
+                const primaryProvider = getProvider(primaryProviderId);
+                const fallbackProvider = fallbackProviderId !== 'none' ? getProvider(fallbackProviderId) : null;
+
+                return (
+                  <div
+                    key={agent.name}
+                    className="border rounded-lg p-4 space-y-4"
+                  >
+                    {/* Agent Header */}
+                    <div className="flex items-center gap-3">
+                      <div style={{ color: agent.color }}>
+                        <DynamicIcon name={agent.icon} className="h-5 w-5" size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-medium">{agent.displayName}</h4>
+                        <p className="text-xs text-muted-foreground">
+                          {agent.description}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-medium">{agent.displayName}</h4>
-                      <p className="text-xs text-muted-foreground">
-                        {agent.description}
-                      </p>
-                    </div>
-                  </div>
 
-                  {/* Primary Provider Selection */}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor={`${agent.name}-primary-provider`}>
-                        Primary Provider
-                      </Label>
-                      <Select
-                        value={primaryProviderId}
-                        onValueChange={(value) => {
-                          const provider = getProvider(value);
-                          if (provider) {
+                    {/* Primary Provider Selection */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor={`${agent.name}-primary-provider`}>
+                          Primary Provider
+                        </Label>
+                        <Select
+                          value={primaryProviderId}
+                          onValueChange={(value) => {
                             const models = getModelsForProvider(value);
-                            // Update local state immediately for responsive UI
-                            updateLocalAssignment(agent.name, {
+                            saveAssignment(agent.name, {
                               primaryProviderId: value,
                               primaryModel: models[0] || '',
+                              fallbackProviderId: assignment?.fallbackProviderId,
+                              fallbackModel: assignment?.fallbackModel,
                             });
-                            // Then persist to API
-                            handleUpdateAssignment(agent.name, {
-                              primaryProviderId: value,
-                              primaryModel: models[0] || '',
-                            });
-                          }
-                        }}
-                      >
-                        <SelectTrigger id={`${agent.name}-primary-provider`}>
-                          <SelectValue placeholder="Select provider">
-                            {primaryProvider ? primaryProvider.name : 'Select provider'}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {enabledProviders.map((provider) => (
-                            <SelectItem key={provider.id} value={provider.id}>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`inline-block h-2 w-2 rounded-full ${
-                                    PROVIDER_TYPE_COLORS[provider.providerType]
-                                  }`}
-                                />
-                                {provider.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor={`${agent.name}-primary-model`}>
-                        Primary Model
-                      </Label>
-                      <Select
-                        value={primaryModel}
-                        onValueChange={(value) => {
-                          updateLocalAssignment(agent.name, {
-                            primaryModel: value,
-                          });
-                          handleUpdateAssignment(agent.name, {
-                            primaryModel: value,
-                          });
-                        }}
-                        disabled={!primaryProviderId}
-                      >
-                        <SelectTrigger id={`${agent.name}-primary-model`}>
-                          <SelectValue placeholder="Select model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {primaryProviderId &&
-                            getModelsForProvider(primaryProviderId).map(
-                              (model) => (
-                                <SelectItem key={model} value={model}>
-                                  {model}
-                                </SelectItem>
-                              )
-                            )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Fallback Provider Selection */}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor={`${agent.name}-fallback-provider`}>
-                        Fallback Provider (optional)
-                      </Label>
-                      <Select
-                        value={fallbackProviderId}
-                        onValueChange={(value) => {
-                          if (value === 'none') {
-                            updateLocalAssignment(agent.name, {
-                              fallbackProviderId: 'none',
-                              fallbackModel: '',
-                            });
-                            handleUpdateAssignment(agent.name, {
-                              fallbackProviderId: 'none',
-                              fallbackModel: '',
-                            });
-                          } else {
-                            const provider = getProvider(value);
-                            if (provider) {
-                              const models = getModelsForProvider(value);
-                              updateLocalAssignment(agent.name, {
-                                fallbackProviderId: value,
-                                fallbackModel: models[0] || '',
-                              });
-                              handleUpdateAssignment(agent.name, {
-                                fallbackProviderId: value,
-                                fallbackModel: models[0] || '',
-                              });
-                            }
-                          }
-                        }}
-                      >
-                        <SelectTrigger id={`${agent.name}-fallback-provider`}>
-                          <SelectValue placeholder="None">
-                            {fallbackProvider ? fallbackProvider.name : 'None'}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {enabledProviders
-                            .filter(
-                              (p) => p.id !== primaryProviderId
-                            )
-                            .map((provider) => (
+                          }}
+                        >
+                          <SelectTrigger id={`${agent.name}-primary-provider`}>
+                            <SelectValue placeholder="Select provider">
+                              {primaryProvider ? primaryProvider.name : ''}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {enabledProviders.map((provider) => (
                               <SelectItem key={provider.id} value={provider.id}>
                                 <div className="flex items-center gap-2">
                                   <span
                                     className={`inline-block h-2 w-2 rounded-full ${
-                                      PROVIDER_TYPE_COLORS[
-                                        provider.providerType
-                                      ]
+                                      PROVIDER_TYPE_COLORS[provider.providerType]
                                     }`}
                                   />
                                   {provider.name}
                                 </div>
                               </SelectItem>
                             ))}
-                        </SelectContent>
-                      </Select>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor={`${agent.name}-primary-model`}>
+                          Primary Model
+                        </Label>
+                        <Select
+                          value={primaryModel}
+                          onValueChange={(value) => {
+                            saveAssignment(agent.name, {
+                              primaryProviderId: primaryProviderId || firstEnabledProvider?.id || '',
+                              primaryModel: value,
+                              fallbackProviderId: assignment?.fallbackProviderId,
+                              fallbackModel: assignment?.fallbackModel,
+                            });
+                          }}
+                          disabled={!primaryProviderId}
+                        >
+                          <SelectTrigger id={`${agent.name}-primary-model`}>
+                            <SelectValue placeholder="Select model">
+                              {primaryModel || ''}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {primaryProviderId &&
+                              getModelsForProvider(primaryProviderId).map(
+                                (model) => (
+                                  <SelectItem key={model} value={model}>
+                                    {model}
+                                  </SelectItem>
+                                )
+                              )}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor={`${agent.name}-fallback-model`}>
-                        Fallback Model
-                      </Label>
-                      <Select
-                        value={fallbackModel}
-                        onValueChange={(value) => {
-                          updateLocalAssignment(agent.name, {
-                            fallbackModel: value,
-                          });
-                          handleUpdateAssignment(agent.name, {
-                            fallbackModel: value,
-                          });
-                        }}
-                        disabled={!fallbackProviderId || fallbackProviderId === 'none'}
-                      >
-                        <SelectTrigger id={`${agent.name}-fallback-model`}>
-                          <SelectValue placeholder="Select model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fallbackProviderId && fallbackProviderId !== 'none' &&
-                            getModelsForProvider(
-                              fallbackProviderId
-                            ).map((model) => (
-                              <SelectItem key={model} value={model}>
-                                {model}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Visual indicator of current assignment */}
-                  {primaryProvider && (
-                    <div className="flex items-center gap-2 pt-2 border-t">
-                      <span className="text-xs text-muted-foreground">
-                        Using:
-                      </span>
-                      <Badge
-                        className={PROVIDER_TYPE_COLORS[primaryProvider.providerType]}
-                      >
-                        {primaryProvider.name}
-                      </Badge>
-                      <span className="text-xs font-mono text-muted-foreground">
-                        {primaryModel}
-                      </span>
-                      {fallbackProvider && (
-                        <>
-                          <span className="text-xs text-muted-foreground">
-                            (fallback:
-                          </span>
-                          <Badge
-                            className={
-                              PROVIDER_TYPE_COLORS[fallbackProvider.providerType]
+                    {/* Fallback Provider Selection */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor={`${agent.name}-fallback-provider`}>
+                          Fallback Provider (optional)
+                        </Label>
+                        <Select
+                          value={fallbackProviderId}
+                          onValueChange={(value) => {
+                            if (value === 'none') {
+                              saveAssignment(agent.name, {
+                                primaryProviderId: primaryProviderId || firstEnabledProvider?.id || '',
+                                primaryModel: primaryModel || firstEnabledProviderModels[0] || '',
+                                fallbackProviderId: undefined,
+                                fallbackModel: undefined,
+                              });
+                            } else {
+                              const models = getModelsForProvider(value);
+                              saveAssignment(agent.name, {
+                                primaryProviderId: primaryProviderId || firstEnabledProvider?.id || '',
+                                primaryModel: primaryModel || firstEnabledProviderModels[0] || '',
+                                fallbackProviderId: value,
+                                fallbackModel: models[0] || '',
+                              });
                             }
-                            variant="outline"
-                          >
-                            {fallbackProvider.name}
-                          </Badge>
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {fallbackModel})
-                          </span>
-                        </>
-                      )}
+                          }}
+                        >
+                          <SelectTrigger id={`${agent.name}-fallback-provider`}>
+                            <SelectValue placeholder="None">
+                              {fallbackProvider ? fallbackProvider.name : 'None'}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {enabledProviders
+                              .filter((p) => p.id !== primaryProviderId)
+                              .map((provider) => (
+                                <SelectItem key={provider.id} value={provider.id}>
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`inline-block h-2 w-2 rounded-full ${
+                                        PROVIDER_TYPE_COLORS[provider.providerType]
+                                      }`}
+                                    />
+                                    {provider.name}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor={`${agent.name}-fallback-model`}>
+                          Fallback Model
+                        </Label>
+                        <Select
+                          value={fallbackModel}
+                          onValueChange={(value) => {
+                            saveAssignment(agent.name, {
+                              primaryProviderId: primaryProviderId || firstEnabledProvider?.id || '',
+                              primaryModel: primaryModel || firstEnabledProviderModels[0] || '',
+                              fallbackProviderId: fallbackProviderId !== 'none' ? fallbackProviderId : undefined,
+                              fallbackModel: value,
+                            });
+                          }}
+                          disabled={!fallbackProviderId || fallbackProviderId === 'none'}
+                        >
+                          <SelectTrigger id={`${agent.name}-fallback-model`}>
+                            <SelectValue placeholder="Select model">
+                              {fallbackModel || ''}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {fallbackProviderId && fallbackProviderId !== 'none' &&
+                              getModelsForProvider(fallbackProviderId).map((model) => (
+                                <SelectItem key={model} value={model}>
+                                  {model}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+
+                    {/* Visual indicator of current assignment */}
+                    {primaryProvider && (
+                      <div className="flex items-center gap-2 pt-2 border-t">
+                        <span className="text-xs text-muted-foreground">Using:</span>
+                        <Badge className={PROVIDER_TYPE_COLORS[primaryProvider.providerType]}>
+                          {primaryProvider.name}
+                        </Badge>
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {primaryModel || '(none)'}
+                        </span>
+                        {fallbackProvider && (
+                          <>
+                            <span className="text-xs text-muted-foreground">(fallback:</span>
+                            <Badge
+                              className={PROVIDER_TYPE_COLORS[fallbackProvider.providerType]}
+                              variant="outline"
+                            >
+                              {fallbackProvider.name}
+                            </Badge>
+                            <span className="text-xs font-mono text-muted-foreground">
+                              {fallbackModel})
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
