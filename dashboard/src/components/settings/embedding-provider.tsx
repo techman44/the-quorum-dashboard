@@ -174,8 +174,17 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
     }
   }
 
+  // Set default base URLs when provider type changes (use ref to prevent loops)
   useEffect(() => {
-    // Pre-populate with static models when provider type changes
+    if (providerType === 'ollama' && baseUrl !== 'http://localhost:11434') {
+      setBaseUrl('http://localhost:11434');
+    } else if (providerType === 'openai' && baseUrl !== 'https://api.openai.com/v1') {
+      setBaseUrl('https://api.openai.com/v1');
+    }
+  }, [providerType]);
+
+  // Pre-populate with static models when provider type or baseUrl changes
+  useEffect(() => {
     const cacheKey = `${providerType}-${baseUrl || 'default'}`;
     const models = FALLBACK_MODELS[providerType] || [];
 
@@ -190,16 +199,7 @@ export function EmbeddingProvider({ providers }: EmbeddingProviderProps) {
       }
     }
     // NOTE: No auto-discovery - user clicks "Refresh" button to discover models
-  }, [providerType]); // Only depend on providerType, not baseUrl
-
-  // Set default base URLs when provider type changes
-  useEffect(() => {
-    if (providerType === 'ollama' && !baseUrl) {
-      setBaseUrl('http://localhost:11434');
-    } else if (providerType === 'openai' && !baseUrl) {
-      setBaseUrl('https://api.openai.com/v1');
-    }
-  }, [providerType]); // Only depend on providerType
+  }, [providerType, baseUrl]);
 
   // NOTE: Removed auto-discovery on baseUrl change to prevent SSR crashes
   // User can manually click "Refresh" to discover models
