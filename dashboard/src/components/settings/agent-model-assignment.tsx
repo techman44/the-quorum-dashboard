@@ -180,12 +180,16 @@ export function AgentModelAssignment({
     return FALLBACK_MODELS[provider.providerType] || [];
   }
 
-  // Auto-discover models for enabled providers on mount
+  // NOTE: Don't auto-discover on mount to avoid SSR issues and crashes
+  // Instead, pre-populate with static models list for all enabled providers
   useEffect(() => {
+    // Initialize static models for all enabled providers
+    const staticModels: Record<string, string[]> = {};
     for (const provider of enabledProviders) {
-      discoverModelsForProvider(provider.id);
+      staticModels[provider.id] = FALLBACK_MODELS[provider.providerType] || [];
     }
-  }, [providers]);
+    setDiscoveredModels(staticModels);
+  }, [enabledProviders]);
 
   function getAssignmentForAgent(agentName: string) {
     return assignments.find((a) => a.agentName === agentName);
@@ -503,7 +507,7 @@ export function AgentModelAssignment({
                           Primary Model
                         </Label>
                         <Select
-                          value={primaryModel}
+                          value={primaryModel || undefined}
                           onValueChange={(value) => {
                             saveAssignment(agent.name, {
                               primaryProviderId: primaryProviderId || firstEnabledProvider?.id || '',
@@ -515,9 +519,7 @@ export function AgentModelAssignment({
                           disabled={!primaryProviderId}
                         >
                           <SelectTrigger id={`${agent.name}-primary-model`}>
-                            <SelectValue placeholder="Select model">
-                              {primaryModel || ''}
-                            </SelectValue>
+                            <SelectValue placeholder="Select model" />
                           </SelectTrigger>
                           <SelectContent>
                             {primaryProviderId &&
@@ -590,7 +592,7 @@ export function AgentModelAssignment({
                           Fallback Model
                         </Label>
                         <Select
-                          value={fallbackModel}
+                          value={fallbackModel || undefined}
                           onValueChange={(value) => {
                             saveAssignment(agent.name, {
                               primaryProviderId: primaryProviderId || firstEnabledProvider?.id || '',
@@ -602,9 +604,7 @@ export function AgentModelAssignment({
                           disabled={!fallbackProviderId || fallbackProviderId === 'none'}
                         >
                           <SelectTrigger id={`${agent.name}-fallback-model`}>
-                            <SelectValue placeholder="Select model">
-                              {fallbackModel || ''}
-                            </SelectValue>
+                            <SelectValue placeholder="Select model" />
                           </SelectTrigger>
                           <SelectContent>
                             {fallbackProviderId && fallbackProviderId !== 'none' &&
